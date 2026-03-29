@@ -24,9 +24,9 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  const prompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].
+  const systemPrompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].`;
 
-Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.
+  const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.
 
 JSON format:
 [{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]
@@ -37,20 +37,22 @@ Diagram:
 ${uml}`;
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 4000
-          }
-        })
-      }
-    );
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.2,
+        max_tokens: 4000,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMsg }
+        ]
+      })
+    });
 
     const txt = await response.text();
     if (!response.ok) {
@@ -60,8 +62,8 @@ ${uml}`;
     }
 
     const data = JSON.parse(txt);
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!raw.trim()) return res.status(500).json({ error: 'Gemini boş cavab qaytardı' });
+    const raw = data?.choices?.[0]?.message?.content || '';
+    if (!raw.trim()) return res.status(500).json({ error: 'Groq boş cavab qaytardı' });
 
     const start = raw.indexOf('['), end = raw.lastIndexOf(']');
     if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapılmadı', raw: raw.slice(0, 200) });
