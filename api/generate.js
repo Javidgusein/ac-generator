@@ -24,25 +24,33 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  const system = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].`;
+  const prompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].
 
-  const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.\n\nJSON format:\n[{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]\n\nRules: 1 item per main task/gateway/event, 3-5 AC each, strict GIVEN-WHEN-THEN, for gateways cover each branch, short testable sentences.\n\nDiagram:\n${uml}`;
+Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.
+
+JSON format:
+[{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]
+
+Rules: 1 item per main task/gateway/event, 3-5 AC each, strict GIVEN-WHEN-THEN, for gateways cover each branch, short testable sentences.
+
+Diagram:
+${uml}`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
-        system,
-        messages: [{ role: 'user', content: userMsg }]
-      })
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 4000
+          }
+        })
+      }
+    );
 
     const txt = await response.text();
     if (!response.ok) {
@@ -52,12 +60,17 @@ export default async function handler(req, res) {
     }
 
     const data = JSON.parse(txt);
-    const raw = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!raw.trim()) return res.status(500).json({ error: 'Gemini boş cavab qaytardı' });
+
     const start = raw.indexOf('['), end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) return res.status(500).json({ error: 'No JSON in response', raw: raw.slice(0, 200) });
+    if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapılmadı', raw: raw.slice(0, 200) });
 
     const items = JSON.parse(raw.slice(start, end + 1));
+    if (!Array.isArray(items) || !items.length) return res.status(500).json({ error: 'Boş array' });
+
     return res.status(200).json({ items });
+
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
