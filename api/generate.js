@@ -24,6 +24,34 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
+  // Trim UML to max 6000 chars to stay within Groq free tier token limit
+  // For BPMN XML: extract only element names/ids to reduce size
+  let trimmedUml = uml;
+  if (isBpmn && uml.length > 4000) {
+    // Extract meaningful parts from BPMN XML: element names, ids, labels
+    const lines = uml.split('\n');
+    const meaningful = lines.filter(line => {
+      const l = line.trim();
+      return l.includes('name=') || l.includes('id=') ||
+             l.includes('startEvent') || l.includes('endEvent') ||
+             l.includes('userTask') || l.includes('serviceTask') ||
+             l.includes('scriptTask') || l.includes('sendTask') ||
+             l.includes('receiveTask') || l.includes('manualTask') ||
+             l.includes('exclusiveGateway') || l.includes('parallelGateway') ||
+             l.includes('inclusiveGateway') || l.includes('eventBasedGateway') ||
+             l.includes('sequenceFlow') || l.includes('subProcess') ||
+             l.includes('boundaryEvent') || l.includes('intermediateCatch') ||
+             l.includes('lane') || l.includes('Lane') ||
+             l.includes('process') || l.includes('Process');
+    });
+    trimmedUml = meaningful.join('\n');
+  }
+
+  // Final safety trim to 5000 chars
+  if (trimmedUml.length > 5000) {
+    trimmedUml = trimmedUml.slice(0, 5000) + '\n... (truncated)';
+  }
+
   const systemPrompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].`;
 
   const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.
@@ -34,7 +62,7 @@ JSON format:
 Rules: 1 item per main task/gateway/event, 3-5 AC each, strict GIVEN-WHEN-THEN, for gateways cover each branch, short testable sentences.
 
 Diagram:
-${uml}`;
+${trimmedUml}`;
 
   try {
     const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -46,7 +74,7 @@ ${uml}`;
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',
         temperature: 0.2,
-        max_tokens: 4000,
+        max_tokens: 3000,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMsg }
