@@ -24,7 +24,6 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  // For large BPMN/XML files, extract only element names to reduce tokens
   let processedUml = uml;
   if (uml.length > 8000) {
     const lines = uml.split('\n');
@@ -34,117 +33,88 @@ export default async function handler(req, res) {
         t.includes('name=') || t.includes('id=') ||
         t.match(/userTask|serviceTask|scriptTask|sendTask|receiveTask|manualTask|businessRuleTask/) ||
         t.match(/startEvent|endEvent|intermediateCatch|intermediateThrow|boundaryEvent/) ||
-        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway/) ||
+        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway/) ||
         t.match(/sequenceFlow|messageFlow|subProcess|callActivity/) ||
-        t.match(/lane|Lane|participant|Participant|pool|Pool/) ||
-        t.match(/\|[^|]+\|/) || // PlantUML swimlanes
-        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/) // PlantUML activity
+        t.match(/lane|Lane|participant|pool|Pool/) ||
+        t.match(/\|[^|]+\|/) ||
+        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/)
       );
     });
     processedUml = keep.join('\n');
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior business analyst. Extract Acceptance Criteria from ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagrams.
-Output ONLY a raw JSON array. No markdown, no explanation, no code fences.
-Keep each acceptance_criteria item SHORT (max 15 words). Use only ASCII characters in values.`;
+  const prompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}.
+Extract Acceptance Criteria from the diagram below. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].
 
-  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}). Output in ${langLabel}.
+JSON format:
+[{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]
 
-Output format (raw JSON array only):
-[{"id":"AC-001","title":"title","priority":"High","element_type":"task","diagram_element":"name","acceptance_criteria":["Given X When Y Then Z"]}]
+Rules: 1 item per main task/gateway/event, 3-5 AC each, strict GIVEN-WHEN-THEN, for gateways cover each branch, short testable sentences. Output in ${langLabel}.
 
-Rules:
-- 1 object per main task or gateway
-- 3 acceptance_criteria per object maximum
-- GIVEN-WHEN-THEN format, max 15 words each
-- No apostrophes, no quotes inside text values
-- Output the JSON array only, nothing before or after
-
-Diagram:
+Diagram (${diagLabel}, format: ${fmtLabel}):
 ${processedUml}`;
 
+  const accountId = process.env.CF_ACCOUNT_ID;
+  const apiToken = process.env.CF_API_TOKEN;
+  const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
+
   try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
-        'X-Title': 'AC Generator'
-      },
-      body: JSON.stringify({
-        model: 'openrouter/auto',
-        temperature: 0.1,
-        max_tokens: 6000,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMsg }
-        ]
-      })
-    });
+    const response = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: 'You are a business analyst. Output ONLY valid JSON arrays. No markdown, no explanation.' },
+            { role: 'user', content: prompt }
+          ],
+          max_tokens: 4000,
+          temperature: 0.1
+        })
+      }
+    );
 
     const txt = await response.text();
     if (!response.ok) {
-      let msg = 'HTTP ' + response.status;
-      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
+      let msg = 'Cloudflare HTTP ' + response.status;
+      try { msg = JSON.parse(txt).errors?.[0]?.message || msg; } catch {}
       return res.status(500).json({ error: msg });
     }
 
     const data = JSON.parse(txt);
-    const raw = data?.choices?.[0]?.message?.content || '';
+    const raw = data?.result?.response || '';
     if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
-    // Find JSON array boundaries
-    const start = raw.indexOf('[');
-    let end = raw.lastIndexOf(']');
-    if (start === -1) return res.status(500).json({ error: 'JSON array tapilmadi', raw: raw.slice(0, 200) });
+    const start = raw.indexOf('['), end = raw.lastIndexOf(']');
+    if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
 
-    let jsonStr = raw.slice(start, end + 1);
+    let jsonStr = raw.slice(start, end + 1)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      .replace(/,(\s*[}\]])/g, '$1');
 
-    // Clean LLM JSON artifacts
-    jsonStr = jsonStr
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // control chars except \t\n\r
-      .replace(/,(\s*[}\]])/g, '$1')                        // trailing commas
-      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');       // unquoted keys
-
-    // Try to parse, if fails try to recover truncated JSON
     let items;
     try {
       items = JSON.parse(jsonStr);
-    } catch (e1) {
-      // Try to recover: find last complete object
+    } catch {
       const lastComplete = jsonStr.lastIndexOf('},');
       if (lastComplete > 0) {
-        const recovered = jsonStr.slice(0, lastComplete + 1) + ']';
-        try {
-          items = JSON.parse(recovered);
-        } catch (e2) {
-          return res.status(500).json({
-            error: 'JSON parse edilemedi. Fayl cox boyukdur, bolub ayri-ayri gonderin.',
-            detail: e1.message
-          });
+        try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
+          return res.status(500).json({ error: 'JSON parse xetasi' });
         }
       } else {
-        return res.status(500).json({
-          error: 'JSON parse edilemedi: ' + e1.message,
-          raw: jsonStr.slice(0, 200)
-        });
+        return res.status(500).json({ error: 'JSON parse xetasi' });
       }
     }
 
-    if (!Array.isArray(items) || !items.length) {
-      return res.status(500).json({ error: 'Bos array qaytarildi' });
-    }
-
+    if (!Array.isArray(items) || !items.length) return res.status(500).json({ error: 'Bos array' });
     return res.status(200).json({ items });
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 }
-
-
-
-
-
