@@ -126,7 +126,7 @@ ${processedUml}`;
 
     const data = JSON.parse(txt);
     const raw = data?.choices?.[0]?.message?.content || '';
-    if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
+    if (!raw || !raw.trim() || raw.trim().startsWith('A server')) {   return res.status(500).json({ error: 'Model xeta qaytardi: ' + (raw||'').slice(0, 100) }); }
 
     const start = raw.indexOf('[');
     const end = raw.lastIndexOf(']');
