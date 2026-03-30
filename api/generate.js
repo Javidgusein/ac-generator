@@ -52,27 +52,56 @@ export default async function handler(req, res) {
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior Business Analyst expert in Gherkin BDD Acceptance Criteria writing.
-Output ONLY a raw JSON array. No markdown, no explanation, no code fences. Start with [ end with ].
+  const systemPrompt = `You are a senior Business Analyst with 10+ years of enterprise software experience. You write professional Acceptance Criteria that QA engineers can directly use for test case creation.
 
-STRICT RULES:
-- Each AC must be UNIQUE - never repeat the same sentence
-- Each AC MUST follow: "${given} [specific context] ${when} [specific action] ${then} [specific verifiable result]"
-- All text in ${langLabel} language only
-- No apostrophes or special quotes inside JSON string values
-- Extract AC for EVERY task, gateway, event in the diagram`;
+THINKING PROCESS - before writing each AC, ask yourself:
+1. What is the BUSINESS PURPOSE of this element? What real-world action does it represent?
+2. Who is the ACTOR? (user, system, admin, external service?)
+3. What are the PRECONDITIONS needed before this step can happen?
+4. What SPECIFIC ACTION triggers this step?
+5. What is the MEASURABLE OUTCOME - what exactly changes in the system?
+6. What are the ALTERNATIVE PATHS? (error cases, gateway branches, edge cases)
 
-  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) completely. Write Acceptance Criteria in ${langLabel} for every element.
+RULES FOR QUALITY AC:
+- Each AC describes a DIFFERENT business scenario or edge case
+- Never copy the element name into the AC text - explain what it MEANS
+- For gateways: write one AC per each branch showing the decision logic
+- For tasks: write AC for happy path, validation, and error scenario
+- For events: write AC for trigger condition and system response
+- Be SPECIFIC: mention exact system behaviors, not vague descriptions
+- AC must be TESTABLE: a QA engineer must be able to write a test from it
+
+LANGUAGE: Write ALL text in ${langLabel} only.
+OUTPUT: Raw JSON array only. No markdown. No explanation. Start with [ end with ].
+No apostrophes inside string values.`;
+
+  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) and write professional Acceptance Criteria for EVERY element.
+
+IMPORTANT QUALITY CHECKS before outputting:
+- Does each AC tell a UNIQUE story? If two ACs say similar things, rewrite one.
+- Does each AC reflect the REAL business logic, not just the element name?
+- For gateway elements: does each branch have its own AC with the specific condition?
+- Are all ACs testable by a QA engineer without needing more information?
 
 JSON format:
-[{"id":"AC-001","title":"element title","priority":"High|Medium|Low","element_type":"userTask|serviceTask|gateway|startEvent|endEvent|boundaryEvent","diagram_element":"exact name","acceptance_criteria":["${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]"]}]
+[{
+  "id": "AC-001",
+  "title": "business-meaningful title in ${langLabel}",
+  "priority": "High|Medium|Low",
+  "element_type": "userTask|serviceTask|exclusiveGateway|parallelGateway|startEvent|endEvent|boundaryEvent|subprocess|lane",
+  "diagram_element": "exact element name from diagram",
+  "acceptance_criteria": [
+    "${given} [specific business context] ${when} [specific user or system action] ${then} [specific measurable system response]",
+    "${given} [different context] ${when} [different action or condition] ${then} [different outcome]",
+    "${given} [error or edge case context] ${when} [trigger for edge case] ${then} [how system handles it]"
+  ]
+}]
 
-Rules: 1 object per task/gateway/event, 3-5 unique AC each, cover all gateway branches, never repeat text.
+Write in ${langLabel}. Output JSON array only.
 
 Diagram:
 ${processedUml}`;
 
-  // Fallback zənciri — biri xəta versə növbətiyə keçir
   const models = [
     'openrouter/auto',
     'meta-llama/llama-3.3-70b-instruct:free',
@@ -94,7 +123,7 @@ ${processedUml}`;
         },
         body: JSON.stringify({
           model,
-          temperature: 0.1,
+          temperature: 0.2,
           max_tokens: 6000,
           messages: [
             { role: 'system', content: systemPrompt },
@@ -105,7 +134,6 @@ ${processedUml}`;
 
       const txt = await response.text();
 
-      // Server xətası və ya HTML cavab gəlsə növbətiyə keç
       if (!txt || txt.trim().startsWith('<') || txt.trim().startsWith('A server')) {
         lastError = new Error('Server xetasi: ' + txt.slice(0, 80));
         continue;
@@ -166,7 +194,7 @@ ${processedUml}`;
   }
 
   return res.status(500).json({
-    error: 'Bütün modellər xəta verdi. Bir az gözləyib yenidən cəhd edin.',
+    error: 'Butun modeller xeta verdi. Bir az gozleyib yeniden ced edin.',
     detail: lastError?.message
   });
 }
