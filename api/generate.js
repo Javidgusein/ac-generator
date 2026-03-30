@@ -46,7 +46,7 @@ ${uml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.0-flash-thinking-exp:free',
+        model: 'meta-llama/llama-3.3-70b-instruct:free',
         temperature: 0.2,
         max_tokens: 4000,
         messages: [
