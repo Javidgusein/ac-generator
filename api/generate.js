@@ -22,9 +22,16 @@ export default async function handler(req, res) {
     'az': 'Azerbaijani', 'en': 'English', 'ru': 'Russian', 'tr': 'Turkish'
   }[lang] || 'Azerbaijani';
 
+  const langKeywords = {
+    'az': { given: 'Verilmishdir', when: 'Ne zaman ki', then: 'Onda' },
+    'en': { given: 'Given', when: 'When', then: 'Then' },
+    'ru': { given: 'Dano', when: 'Kogda', then: 'Togda' },
+    'tr': { given: 'Verildiginde', when: 'Ne zaman', then: 'O zaman' }
+  }[lang] || { given: 'Given', when: 'When', then: 'Then' };
+
+  const { given, when, then } = langKeywords;
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  // For large BPMN/XML files, extract only element names to reduce tokens
   let processedUml = uml;
   if (uml.length > 8000) {
     const lines = uml.split('\n');
@@ -37,29 +44,38 @@ export default async function handler(req, res) {
         t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway/) ||
         t.match(/sequenceFlow|messageFlow|subProcess|callActivity/) ||
         t.match(/lane|Lane|participant|Participant|pool|Pool/) ||
-        t.match(/\|[^|]+\|/) || // PlantUML swimlanes
-        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/) // PlantUML activity
+        t.match(/\|[^|]+\|/) ||
+        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/)
       );
     });
     processedUml = keep.join('\n');
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior business analyst. Extract Acceptance Criteria from ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagrams.
-Output ONLY a raw JSON array. No markdown, no explanation, no code fences.
-Keep each acceptance_criteria item SHORT (max 15 words). Use only ASCII characters in values.`;
+  const systemPrompt = `You are a senior Business Analyst expert in Gherkin BDD Acceptance Criteria writing.
+Output ONLY a raw JSON array. No markdown, no explanation, no code fences. Start with [ end with ].
 
-  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}). Output in ${langLabel}.
+STRICT RULES:
+- Each AC must be UNIQUE - never repeat the same sentence in any item
+- Each AC MUST follow exact format: "${given} [specific context] ${when} [specific action] ${then} [specific verifiable result]"
+- ${given} = specific precondition or system state before the action
+- ${when} = the exact user action or system trigger that occurs
+- ${then} = the specific, measurable system response or outcome
+- All text values must be in ${langLabel} language only
+- No apostrophes or special quotes inside JSON string values`;
 
-Output format (raw JSON array only):
-[{"id":"AC-001","title":"title","priority":"High","element_type":"task","diagram_element":"name","acceptance_criteria":["Given X When Y Then Z"]}]
+  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) completely end-to-end. Write Acceptance Criteria in ${langLabel} for every task, gateway, and event.
+
+JSON format:
+[{"id":"AC-001","title":"element title in ${langLabel}","priority":"High|Medium|Low","element_type":"userTask|serviceTask|gateway|startEvent|endEvent|boundaryEvent|subprocess","diagram_element":"exact name from diagram","acceptance_criteria":["${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]"]}]
 
 Rules:
-- 1 object per main task or gateway
-- 3 acceptance_criteria per object maximum
-- GIVEN-WHEN-THEN format, max 15 words each
-- No apostrophes, no quotes inside text values
-- Output the JSON array only, nothing before or after
+- 1 object per main task, gateway, or event
+- 3-5 unique AC per object
+- For gateways: cover each decision branch as separate AC
+- For error events: write AC for the error scenario
+- NEVER write the same text twice across any AC items
+- Output JSON array only, nothing before or after
 
 Diagram:
 ${processedUml}`;
@@ -95,25 +111,19 @@ ${processedUml}`;
     const raw = data?.choices?.[0]?.message?.content || '';
     if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
-    // Find JSON array boundaries
     const start = raw.indexOf('[');
-    let end = raw.lastIndexOf(']');
+    const end = raw.lastIndexOf(']');
     if (start === -1) return res.status(500).json({ error: 'JSON array tapilmadi', raw: raw.slice(0, 200) });
 
-    let jsonStr = raw.slice(start, end + 1);
+    let jsonStr = raw.slice(start, end + 1)
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+      .replace(/,(\s*[}\]])/g, '$1')
+      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
 
-    // Clean LLM JSON artifacts
-    jsonStr = jsonStr
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // control chars except \t\n\r
-      .replace(/,(\s*[}\]])/g, '$1')                        // trailing commas
-      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');       // unquoted keys
-
-    // Try to parse, if fails try to recover truncated JSON
     let items;
     try {
       items = JSON.parse(jsonStr);
     } catch (e1) {
-      // Try to recover: find last complete object
       const lastComplete = jsonStr.lastIndexOf('},');
       if (lastComplete > 0) {
         const recovered = jsonStr.slice(0, lastComplete + 1) + ']';
@@ -121,7 +131,7 @@ ${processedUml}`;
           items = JSON.parse(recovered);
         } catch (e2) {
           return res.status(500).json({
-            error: 'JSON parse edilemedi. Fayl cox boyukdur, bolub ayri-ayri gonderin.',
+            error: 'JSON parse edilemedi. Fayl cox boyukdur.',
             detail: e1.message
           });
         }
@@ -143,8 +153,3 @@ ${processedUml}`;
     return res.status(500).json({ error: err.message });
   }
 }
-
-
-
-
-
