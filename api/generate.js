@@ -22,6 +22,13 @@ export default async function handler(req, res) {
     'az': 'Azerbaijani', 'en': 'English', 'ru': 'Russian', 'tr': 'Turkish'
   }[lang] || 'Azerbaijani';
 
+  const langKeywords = {
+    'az': { given: 'Verilmişdir', when: 'Nə zaman', then: 'Onda' },
+    'en': { given: 'Given', when: 'When', then: 'Then' },
+    'ru': { given: 'Дано', when: 'Когда', then: 'Тогда' },
+    'tr': { given: 'Verildiğinde', when: 'Ne zaman', then: 'O zaman' }
+  }[lang] || { given: 'Given', when: 'When', then: 'Then' };
+
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
   let processedUml = uml;
@@ -44,51 +51,83 @@ export default async function handler(req, res) {
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const prompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}.
-Extract Acceptance Criteria from the diagram below. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].
+  const { given, when, then } = langKeywords;
 
-JSON format:
-[{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]
+  const systemPrompt = `You are a senior Business Analyst with deep expertise in writing Acceptance Criteria using the Gherkin BDD format (Given-When-Then).
 
-Rules: 1 item per main task/gateway/event, 3-5 AC each, strict GIVEN-WHEN-THEN, for gateways cover each branch, short testable sentences. Output in ${langLabel}.
+Your task: Analyze the provided ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagram and extract professional Acceptance Criteria for EVERY task, gateway, event, and subprocess.
 
-Diagram (${diagLabel}, format: ${fmtLabel}):
+CRITICAL RULES FOR ACCEPTANCE CRITERIA:
+1. Every AC must follow STRICT format: "${given} [precondition/context] ${when} [action/trigger] ${then} [expected outcome]"
+2. "${given}" = the initial context or precondition before the action
+3. "${when}" = the specific action, event, or trigger that occurs  
+4. "${then}" = the measurable, verifiable expected result
+5. Each AC must be testable by a QA engineer
+6. Cover ALL paths: happy path, alternative flows, error cases, gateway branches
+7. For gateways: write separate AC for EACH decision branch
+8. For error events: write AC covering what happens when error occurs
+9. Language: Write ALL text values in ${langLabel} language ONLY
+10. No apostrophes or special quotes inside JSON string values
+
+OUTPUT: Return ONLY a raw JSON array. Zero explanation. Zero markdown. Start directly with [
+
+JSON structure:
+[
+  {
+    "id": "AC-001",
+    "title": "descriptive title in ${langLabel}",
+    "priority": "High|Medium|Low",
+    "element_type": "task|gateway|event|subprocess|lane|startEvent|endEvent|userTask|serviceTask",
+    "diagram_element": "exact element name from diagram",
+    "acceptance_criteria": [
+      "${given} [context] ${when} [action] ${then} [result]",
+      "${given} [context] ${when} [action] ${then} [result]",
+      "${given} [context] ${when} [action] ${then} [result]"
+    ]
+  }
+]`;
+
+  const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}) completely and extract Acceptance Criteria for EVERY element.
+
+Cover the ENTIRE end-to-end process. Do not skip any task, gateway, or event.
+Write all text in ${langLabel} language.
+Each acceptance_criteria item MUST start with "${given}", "${when}", or "${then}" keyword.
+
+Diagram:
 ${processedUml}`;
-
-  const accountId = process.env.CF_ACCOUNT_ID;
-  const apiToken = process.env.CF_API_TOKEN;
-  const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
   try {
     const response = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`,
+      'https://api-inference.huggingface.co/models/Qwen/Qwen2.5-72B-Instruct/v1/chat/completions',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiToken}`
+          'Authorization': `Bearer ${process.env.HF_API_TOKEN}`
         },
         body: JSON.stringify({
+          model: 'Qwen/Qwen2.5-72B-Instruct',
           messages: [
-            { role: 'system', content: 'You are a business analyst. Output ONLY valid JSON arrays. No markdown, no explanation.' },
-            { role: 'user', content: prompt }
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMsg }
           ],
-          max_tokens: 4000,
-          temperature: 0.1
+          max_tokens: 6000,
+          temperature: 0.1,
+          stream: false
         })
       }
     );
 
     const txt = await response.text();
     if (!response.ok) {
-      let msg = 'Cloudflare HTTP ' + response.status;
-      try { msg = JSON.parse(txt).errors?.[0]?.message || msg; } catch {}
+      let msg = 'HTTP ' + response.status;
+      try { msg = JSON.parse(txt).error || msg; } catch {}
       return res.status(500).json({ error: msg });
     }
 
     const data = JSON.parse(txt);
-    const raw = typeof data?.result?.response === 'string' ? data.result.response : JSON.stringify(data?.result || data || '');
-    if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
+    const raw = data?.choices?.[0]?.message?.content || '';
+    if (!raw || !raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
     const start = raw.indexOf('['), end = raw.lastIndexOf(']');
     if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
@@ -103,7 +142,9 @@ ${processedUml}`;
     } catch {
       const lastComplete = jsonStr.lastIndexOf('},');
       if (lastComplete > 0) {
-        try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
+        try {
+          items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']');
+        } catch {
           return res.status(500).json({ error: 'JSON parse xetasi' });
         }
       } else {
