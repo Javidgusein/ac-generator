@@ -87,7 +87,7 @@ ${processedUml}`;
     }
 
     const data = JSON.parse(txt);
-    const raw = data?.result?.response || '';
+    const raw = typeof data?.result?.response === 'string' ? data.result.response : JSON.stringify(data?.result || data || '');
     if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
     const start = raw.indexOf('['), end = raw.lastIndexOf(']');
