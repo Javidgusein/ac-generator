@@ -90,7 +90,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'google/gemma-3-27b-it:free',
+        model: 'mistralai/mistral-small-3.2-24b-instruct:free',
         temperature: 0.1,
         max_tokens: 6000,
         messages: [
