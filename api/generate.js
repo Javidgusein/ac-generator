@@ -90,7 +90,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'openrouter/auto',
+        model: 'google/gemma-3-27b-it:free',
         temperature: 0.1,
         max_tokens: 6000,
         messages: [
