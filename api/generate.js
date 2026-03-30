@@ -24,23 +24,45 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  const systemPrompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ]. IMPORTANT: Use only double quotes in JSON. Never use single quotes, apostrophes, or special characters inside string values.`;
+  // For large BPMN/XML files, extract only element names to reduce tokens
+  let processedUml = uml;
+  if (uml.length > 8000) {
+    const lines = uml.split('\n');
+    const keep = lines.filter(l => {
+      const t = l.trim();
+      return (
+        t.includes('name=') || t.includes('id=') ||
+        t.match(/userTask|serviceTask|scriptTask|sendTask|receiveTask|manualTask|businessRuleTask/) ||
+        t.match(/startEvent|endEvent|intermediateCatch|intermediateThrow|boundaryEvent/) ||
+        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway/) ||
+        t.match(/sequenceFlow|messageFlow|subProcess|callActivity/) ||
+        t.match(/lane|Lane|participant|Participant|pool|Pool/) ||
+        t.match(/\|[^|]+\|/) || // PlantUML swimlanes
+        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/) // PlantUML activity
+      );
+    });
+    processedUml = keep.join('\n');
+    if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
+  }
 
-  const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.
+  const systemPrompt = `You are a senior business analyst. Extract Acceptance Criteria from ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagrams.
+Output ONLY a raw JSON array. No markdown, no explanation, no code fences.
+Keep each acceptance_criteria item SHORT (max 15 words). Use only ASCII characters in values.`;
 
-JSON format:
-[{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]
+  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}). Output in ${langLabel}.
+
+Output format (raw JSON array only):
+[{"id":"AC-001","title":"title","priority":"High","element_type":"task","diagram_element":"name","acceptance_criteria":["Given X When Y Then Z"]}]
 
 Rules:
-- 1 item per main task/gateway/event
-- 3-5 AC each in strict GIVEN-WHEN-THEN format
-- For gateways cover each branch
-- Short testable sentences
-- NO apostrophes or special chars in text values
-- Output ONLY the JSON array, nothing else
+- 1 object per main task or gateway
+- 3 acceptance_criteria per object maximum
+- GIVEN-WHEN-THEN format, max 15 words each
+- No apostrophes, no quotes inside text values
+- Output the JSON array only, nothing before or after
 
 Diagram:
-${uml}`;
+${processedUml}`;
 
   try {
     const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -54,7 +76,7 @@ ${uml}`;
       body: JSON.stringify({
         model: 'openrouter/auto',
         temperature: 0.1,
-        max_tokens: 4000,
+        max_tokens: 6000,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMsg }
@@ -73,32 +95,42 @@ ${uml}`;
     const raw = data?.choices?.[0]?.message?.content || '';
     if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
-    // Extract JSON array
+    // Find JSON array boundaries
     const start = raw.indexOf('[');
-    const end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) {
-      return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 300) });
-    }
+    let end = raw.lastIndexOf(']');
+    if (start === -1) return res.status(500).json({ error: 'JSON array tapilmadi', raw: raw.slice(0, 200) });
 
     let jsonStr = raw.slice(start, end + 1);
 
-    // Clean common JSON issues from LLM output
+    // Clean LLM JSON artifacts
     jsonStr = jsonStr
-      .replace(/[\u0000-\u001F\u007F]/g, ' ') // remove control characters
-      .replace(/,\s*}/g, '}')                  // trailing commas in objects
-      .replace(/,\s*]/g, ']')                  // trailing commas in arrays
-      .replace(/\\'/g, "'")                    // escaped single quotes
-      .replace(/([^\\])'/g, "$1\u2019");       // unescaped single quotes to curly apostrophe
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // control chars except \t\n\r
+      .replace(/,(\s*[}\]])/g, '$1')                        // trailing commas
+      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');       // unquoted keys
 
+    // Try to parse, if fails try to recover truncated JSON
     let items;
     try {
       items = JSON.parse(jsonStr);
-    } catch (e) {
-      // Last resort: try to extract individual objects
-      return res.status(500).json({ 
-        error: 'JSON parse xetasi: ' + e.message,
-        raw: jsonStr.slice(0, 300)
-      });
+    } catch (e1) {
+      // Try to recover: find last complete object
+      const lastComplete = jsonStr.lastIndexOf('},');
+      if (lastComplete > 0) {
+        const recovered = jsonStr.slice(0, lastComplete + 1) + ']';
+        try {
+          items = JSON.parse(recovered);
+        } catch (e2) {
+          return res.status(500).json({
+            error: 'JSON parse edilemedi. Fayl cox boyukdur, bolub ayri-ayri gonderin.',
+            detail: e1.message
+          });
+        }
+      } else {
+        return res.status(500).json({
+          error: 'JSON parse edilemedi: ' + e1.message,
+          raw: jsonStr.slice(0, 200)
+        });
+      }
     }
 
     if (!Array.isArray(items) || !items.length) {
