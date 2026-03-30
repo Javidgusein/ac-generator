@@ -107,7 +107,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'openrouter/auto',
+        model: 'deepseek/deepseek-r1:free',
         temperature: 0.1,
         max_tokens: 8000,
         messages: [
