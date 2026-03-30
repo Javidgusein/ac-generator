@@ -52,114 +52,121 @@ export default async function handler(req, res) {
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior Business Analyst with 10+ years of experience writing Acceptance Criteria in Gherkin BDD format for enterprise software projects.
+  const systemPrompt = `You are a senior Business Analyst expert in Gherkin BDD Acceptance Criteria writing.
+Output ONLY a raw JSON array. No markdown, no explanation, no code fences. Start with [ end with ].
 
-YOUR MISSION: Analyze the provided diagram and extract COMPLETE, PROFESSIONAL Acceptance Criteria for EVERY single element.
+STRICT RULES:
+- Each AC must be UNIQUE - never repeat the same sentence
+- Each AC MUST follow: "${given} [specific context] ${when} [specific action] ${then} [specific verifiable result]"
+- All text in ${langLabel} language only
+- No apostrophes or special quotes inside JSON string values
+- Extract AC for EVERY task, gateway, event in the diagram`;
 
-ABSOLUTE RULES - NEVER BREAK THESE:
-1. OUTPUT: Only a raw JSON array. Zero explanation. Zero markdown. Zero code fences. Start with [ end with ]
-2. COMPLETENESS: Extract AC for EVERY task, gateway, event, subprocess, lane - do not skip any element
-3. UNIQUENESS: Every single AC item must be completely different - NEVER repeat the same sentence
-4. FORMAT: Every AC must follow EXACTLY: "${given} [specific precondition] ${when} [specific trigger/action] ${then} [specific measurable outcome]"
-   - ${given} = the exact system state or user context BEFORE the action
-   - ${when} = the precise user action OR system event that occurs
-   - ${then} = the specific, testable system response or business outcome
-5. LANGUAGE: Write ALL title and acceptance_criteria text in ${langLabel} ONLY
-6. COVERAGE: For gateways write separate AC for EACH branch/path
-7. QUALITY: Each AC must be testable by a QA engineer - avoid vague statements
-8. COUNT: Write exactly 4-5 AC per element - no more, no less`;
+  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) completely. Write Acceptance Criteria in ${langLabel} for every element.
 
-  const userMsg = `Analyze this COMPLETE ${diagLabel} (format: ${fmtLabel}) from start to finish.
+JSON format:
+[{"id":"AC-001","title":"element title","priority":"High|Medium|Low","element_type":"userTask|serviceTask|gateway|startEvent|endEvent|boundaryEvent","diagram_element":"exact name","acceptance_criteria":["${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]"]}]
 
-CRITICAL: The number of AC objects must be the SAME regardless of output language. Do not produce fewer items in ${langLabel} than you would in English.
+Rules: 1 object per task/gateway/event, 3-5 unique AC each, cover all gateway branches, never repeat text.
 
-For EVERY element in the diagram create one JSON object. Cover the full end-to-end flow.
-
-JSON format (strict):
-[
-  {
-    "id": "AC-001",
-    "title": "descriptive title of the element in ${langLabel}",
-    "priority": "High|Medium|Low",
-    "element_type": "userTask|serviceTask|exclusiveGateway|parallelGateway|startEvent|endEvent|boundaryEvent|subprocess|lane",
-    "diagram_element": "exact element name as it appears in diagram",
-    "acceptance_criteria": [
-      "${given} [specific context] ${when} [specific action] ${then} [specific result]",
-      "${given} [specific context] ${when} [specific action] ${then} [specific result]",
-      "${given} [specific context] ${when} [specific action] ${then} [specific result]",
-      "${given} [specific context] ${when} [specific action] ${then} [specific result]"
-    ]
-  }
-]
-
-DO NOT skip elements. DO NOT merge elements. DO NOT repeat AC text. Output JSON array only.
-
-Diagram to analyze:
+Diagram:
 ${processedUml}`;
 
-  try {
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
-        'X-Title': 'AC Generator'
-      },
-      body: JSON.stringify({
-        arcee-ai/trinity-large-preview:freeidia/nemotron-3-super-120b-a12b:free
-        temperature: 0.1,
-        max_tokens: 8000,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMsg }
-        ]
-      })
-    });
+  // Fallback zənciri — biri xəta versə növbətiyə keçir
+  const models = [
+    'openrouter/auto',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'mistralai/mistral-small-3.1-24b-instruct:free',
+    'google/gemma-3-27b-it:free'
+  ];
 
-    const txt = await response.text();
-    if (!response.ok) {
-      let msg = 'HTTP ' + response.status;
-      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
-      return res.status(500).json({ error: msg });
-    }
+  let lastError = null;
 
-    const data = JSON.parse(txt);
-    const raw = data?.choices?.[0]?.message?.content || '';
-    if (!raw || !raw.trim() || raw.trim().startsWith('A server')) {   return res.status(500).json({ error: 'Model xeta qaytardi: ' + (raw||'').slice(0, 100) }); }
-
-    const start = raw.indexOf('[');
-    const end = raw.lastIndexOf(']');
-    if (start === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
-
-    let jsonStr = raw.slice(start, end + 1)
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-      .replace(/,(\s*[}\]])/g, '$1')
-      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
-
-    let items;
+  for (const model of models) {
     try {
-      items = JSON.parse(jsonStr);
-    } catch (e1) {
-      const lastComplete = jsonStr.lastIndexOf('},');
-      if (lastComplete > 0) {
-        try {
-          items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']');
-        } catch {
-          return res.status(500).json({ error: 'JSON parse xetasi: ' + e1.message });
-        }
-      } else {
-        return res.status(500).json({ error: 'JSON parse xetasi: ' + e1.message });
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
+          'X-Title': 'AC Generator'
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.1,
+          max_tokens: 6000,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMsg }
+          ]
+        })
+      });
+
+      const txt = await response.text();
+
+      // Server xətası və ya HTML cavab gəlsə növbətiyə keç
+      if (!txt || txt.trim().startsWith('<') || txt.trim().startsWith('A server')) {
+        lastError = new Error('Server xetasi: ' + txt.slice(0, 80));
+        continue;
       }
+
+      if (!response.ok) {
+        let msg = 'HTTP ' + response.status;
+        try { msg = JSON.parse(txt).error?.message || msg; } catch {}
+        lastError = new Error(msg);
+        continue;
+      }
+
+      let data;
+      try { data = JSON.parse(txt); } catch {
+        lastError = new Error('Response parse xetasi');
+        continue;
+      }
+
+      const raw = data?.choices?.[0]?.message?.content || '';
+      if (!raw.trim()) { lastError = new Error('Bos cavab'); continue; }
+
+      const start = raw.indexOf('[');
+      const end = raw.lastIndexOf(']');
+      if (start === -1 || end === -1) { lastError = new Error('JSON tapilmadi'); continue; }
+
+      let jsonStr = raw.slice(start, end + 1)
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .replace(/,(\s*[}\]])/g, '$1')
+        .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+
+      let items;
+      try {
+        items = JSON.parse(jsonStr);
+      } catch {
+        const lastComplete = jsonStr.lastIndexOf('},');
+        if (lastComplete > 0) {
+          try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
+            lastError = new Error('JSON parse xetasi');
+            continue;
+          }
+        } else {
+          lastError = new Error('JSON parse xetasi');
+          continue;
+        }
+      }
+
+      if (!Array.isArray(items) || !items.length) {
+        lastError = new Error('Bos array');
+        continue;
+      }
+
+      return res.status(200).json({ items });
+
+    } catch (err) {
+      lastError = err;
+      continue;
     }
-
-    if (!Array.isArray(items) || !items.length) {
-      return res.status(500).json({ error: 'Bos array qaytarildi' });
-    }
-
-    return res.status(200).json({ items });
-
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
   }
+
+  return res.status(500).json({
+    error: 'Bütün modellər xəta verdi. Bir az gözləyib yenidən cəhd edin.',
+    detail: lastError?.message
+  });
 }
