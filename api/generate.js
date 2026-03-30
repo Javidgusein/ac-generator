@@ -22,15 +22,9 @@ export default async function handler(req, res) {
     'az': 'Azerbaijani', 'en': 'English', 'ru': 'Russian', 'tr': 'Turkish'
   }[lang] || 'Azerbaijani';
 
-  const langKeywords = {
-    'az': { given: 'Verilmişdir', when: 'Nə zaman', then: 'Onda' },
-    'en': { given: 'Given', when: 'When', then: 'Then' },
-    'ru': { given: 'Дано', when: 'Когда', then: 'Тогда' },
-    'tr': { given: 'Verildiğinde', when: 'Ne zaman', then: 'O zaman' }
-  }[lang] || { given: 'Given', when: 'When', then: 'Then' };
-
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
+  // For large BPMN/XML files, extract only element names to reduce tokens
   let processedUml = uml;
   if (uml.length > 8000) {
     const lines = uml.split('\n');
@@ -40,122 +34,117 @@ export default async function handler(req, res) {
         t.includes('name=') || t.includes('id=') ||
         t.match(/userTask|serviceTask|scriptTask|sendTask|receiveTask|manualTask|businessRuleTask/) ||
         t.match(/startEvent|endEvent|intermediateCatch|intermediateThrow|boundaryEvent/) ||
-        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway/) ||
+        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway/) ||
         t.match(/sequenceFlow|messageFlow|subProcess|callActivity/) ||
-        t.match(/lane|Lane|participant|pool|Pool/) ||
-        t.match(/\|[^|]+\|/) ||
-        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/)
+        t.match(/lane|Lane|participant|Participant|pool|Pool/) ||
+        t.match(/\|[^|]+\|/) || // PlantUML swimlanes
+        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/) // PlantUML activity
       );
     });
     processedUml = keep.join('\n');
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const { given, when, then } = langKeywords;
+  const systemPrompt = `You are a senior business analyst. Extract Acceptance Criteria from ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagrams.
+Output ONLY a raw JSON array. No markdown, no explanation, no code fences.
+Keep each acceptance_criteria item SHORT (max 15 words). Use only ASCII characters in values.`;
 
-  const systemPrompt = `You are a senior Business Analyst with deep expertise in writing Acceptance Criteria using the Gherkin BDD format (Given-When-Then).
+  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}). Output in ${langLabel}.
 
-Your task: Analyze the provided ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagram and extract professional Acceptance Criteria for EVERY task, gateway, event, and subprocess.
+Output format (raw JSON array only):
+[{"id":"AC-001","title":"title","priority":"High","element_type":"task","diagram_element":"name","acceptance_criteria":["Given X When Y Then Z"]}]
 
-CRITICAL RULES FOR ACCEPTANCE CRITERIA:
-1. Every AC must follow STRICT format: "${given} [precondition/context] ${when} [action/trigger] ${then} [expected outcome]"
-2. "${given}" = the initial context or precondition before the action
-3. "${when}" = the specific action, event, or trigger that occurs  
-4. "${then}" = the measurable, verifiable expected result
-5. Each AC must be testable by a QA engineer
-6. Cover ALL paths: happy path, alternative flows, error cases, gateway branches
-7. For gateways: write separate AC for EACH decision branch
-8. For error events: write AC covering what happens when error occurs
-9. Language: Write ALL text values in ${langLabel} language ONLY
-10. No apostrophes or special quotes inside JSON string values
-
-OUTPUT: Return ONLY a raw JSON array. Zero explanation. Zero markdown. Start directly with [
-
-JSON structure:
-[
-  {
-    "id": "AC-001",
-    "title": "descriptive title in ${langLabel}",
-    "priority": "High|Medium|Low",
-    "element_type": "task|gateway|event|subprocess|lane|startEvent|endEvent|userTask|serviceTask",
-    "diagram_element": "exact element name from diagram",
-    "acceptance_criteria": [
-      "${given} [context] ${when} [action] ${then} [result]",
-      "${given} [context] ${when} [action] ${then} [result]",
-      "${given} [context] ${when} [action] ${then} [result]"
-    ]
-  }
-]`;
-
-  const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}) completely and extract Acceptance Criteria for EVERY element.
-
-Cover the ENTIRE end-to-end process. Do not skip any task, gateway, or event.
-Write all text in ${langLabel} language.
-Each acceptance_criteria item MUST start with "${given}", "${when}", or "${then}" keyword.
+Rules:
+- 1 object per main task or gateway
+- 3 acceptance_criteria per object maximum
+- GIVEN-WHEN-THEN format, max 15 words each
+- No apostrophes, no quotes inside text values
+- Output the JSON array only, nothing before or after
 
 Diagram:
 ${processedUml}`;
 
   try {
-    const response = await fetch(
-      'https://api-inference.huggingface.co/models/Qwen/Qwen2.5-72B-Instruct/v1/chat/completions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.HF_API_TOKEN}`
-        },
-        body: JSON.stringify({
-          model: 'Qwen/Qwen2.5-72B-Instruct',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMsg }
-          ],
-          max_tokens: 6000,
-          temperature: 0.1,
-          stream: false
-        })
-      }
-    );
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
+        'X-Title': 'AC Generator'
+      },
+      body: JSON.stringify({
+        model: 'openrouter/auto',
+        temperature: 0.1,
+        max_tokens: 6000,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMsg }
+        ]
+      })
+    });
 
     const txt = await response.text();
     if (!response.ok) {
       let msg = 'HTTP ' + response.status;
-      try { msg = JSON.parse(txt).error || msg; } catch {}
+      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
       return res.status(500).json({ error: msg });
     }
 
     const data = JSON.parse(txt);
     const raw = data?.choices?.[0]?.message?.content || '';
-    if (!raw || !raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
+    if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
-    const start = raw.indexOf('['), end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
+    // Find JSON array boundaries
+    const start = raw.indexOf('[');
+    let end = raw.lastIndexOf(']');
+    if (start === -1) return res.status(500).json({ error: 'JSON array tapilmadi', raw: raw.slice(0, 200) });
 
-    let jsonStr = raw.slice(start, end + 1)
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-      .replace(/,(\s*[}\]])/g, '$1');
+    let jsonStr = raw.slice(start, end + 1);
 
+    // Clean LLM JSON artifacts
+    jsonStr = jsonStr
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // control chars except \t\n\r
+      .replace(/,(\s*[}\]])/g, '$1')                        // trailing commas
+      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');       // unquoted keys
+
+    // Try to parse, if fails try to recover truncated JSON
     let items;
     try {
       items = JSON.parse(jsonStr);
-    } catch {
+    } catch (e1) {
+      // Try to recover: find last complete object
       const lastComplete = jsonStr.lastIndexOf('},');
       if (lastComplete > 0) {
+        const recovered = jsonStr.slice(0, lastComplete + 1) + ']';
         try {
-          items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']');
-        } catch {
-          return res.status(500).json({ error: 'JSON parse xetasi' });
+          items = JSON.parse(recovered);
+        } catch (e2) {
+          return res.status(500).json({
+            error: 'JSON parse edilemedi. Fayl cox boyukdur, bolub ayri-ayri gonderin.',
+            detail: e1.message
+          });
         }
       } else {
-        return res.status(500).json({ error: 'JSON parse xetasi' });
+        return res.status(500).json({
+          error: 'JSON parse edilemedi: ' + e1.message,
+          raw: jsonStr.slice(0, 200)
+        });
       }
     }
 
-    if (!Array.isArray(items) || !items.length) return res.status(500).json({ error: 'Bos array' });
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(500).json({ error: 'Bos array qaytarildi' });
+    }
+
     return res.status(200).json({ items });
 
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
 }
+
+
+
+
+
