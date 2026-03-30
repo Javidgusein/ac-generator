@@ -22,18 +22,11 @@ export default async function handler(req, res) {
     'az': 'Azerbaijani', 'en': 'English', 'ru': 'Russian', 'tr': 'Turkish'
   }[lang] || 'Azerbaijani';
 
-  const langKeywords = {
-    'az': { given: 'Verilmişdir', when: 'Nə zaman', then: 'Onda' },
-    'en': { given: 'Given', when: 'When', then: 'Then' },
-    'ru': { given: 'Дано', when: 'Когда', then: 'Тогда' },
-    'tr': { given: 'Verildiğinde', when: 'Ne zaman', then: 'O zaman' }
-  }[lang] || { given: 'Given', when: 'When', then: 'Then' };
-
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
-  const { given, when, then } = langKeywords;
 
+  // For large BPMN/XML files, extract only element names to reduce tokens
   let processedUml = uml;
-  if (uml.length > 10000) {
+  if (uml.length > 8000) {
     const lines = uml.split('\n');
     const keep = lines.filter(l => {
       const t = l.trim();
@@ -41,118 +34,117 @@ export default async function handler(req, res) {
         t.includes('name=') || t.includes('id=') ||
         t.match(/userTask|serviceTask|scriptTask|sendTask|receiveTask|manualTask|businessRuleTask/) ||
         t.match(/startEvent|endEvent|intermediateCatch|intermediateThrow|boundaryEvent/) ||
-        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway/) ||
+        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway/) ||
         t.match(/sequenceFlow|messageFlow|subProcess|callActivity/) ||
-        t.match(/lane|Lane|participant|pool|Pool/) ||
-        t.match(/\|[^|]+\|/) ||
-        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/)
+        t.match(/lane|Lane|participant|Participant|pool|Pool/) ||
+        t.match(/\|[^|]+\|/) || // PlantUML swimlanes
+        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/) // PlantUML activity
       );
     });
     processedUml = keep.join('\n');
-    if (processedUml.length > 10000) processedUml = processedUml.slice(0, 10000);
+    if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior Business Analyst expert in writing Acceptance Criteria using Gherkin BDD format.
+  const systemPrompt = `You are a senior business analyst. Extract Acceptance Criteria from ${isBpmn ? 'BPMN/Camunda' : 'UML'} diagrams.
+Output ONLY a raw JSON array. No markdown, no explanation, no code fences.
+Keep each acceptance_criteria item SHORT (max 15 words). Use only ASCII characters in values.`;
 
-STRICT RULES:
-1. Extract AC for EVERY task, gateway, event, subprocess in the diagram
-2. Each AC must be UNIQUE and MEANINGFUL - never repeat the same sentence
-3. Each AC MUST follow: "${given} [specific precondition] ${when} [specific action] ${then} [specific measurable result]"
-4. "${given}" = specific system state or user context before action
-5. "${when}" = the exact user action or system trigger
-6. "${then}" = the specific, verifiable system response or outcome
-7. For gateways: write separate AC for EACH decision branch with specific condition
-8. For error events: write AC for error scenario
-9. ALL text must be in ${langLabel} language
-10. Output ONLY raw JSON array, no markdown, no explanation`;
+  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}). Output in ${langLabel}.
 
-  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) end-to-end. Write Acceptance Criteria in ${langLabel} for every element.
+Output format (raw JSON array only):
+[{"id":"AC-001","title":"title","priority":"High","element_type":"task","diagram_element":"name","acceptance_criteria":["Given X When Y Then Z"]}]
 
-IMPORTANT: Each acceptance criteria must describe a DIFFERENT, SPECIFIC scenario. Never write the same text twice.
-
-JSON format:
-[{"id":"AC-001","title":"element title in ${langLabel}","priority":"High|Medium|Low","element_type":"userTask|serviceTask|gateway|startEvent|endEvent|boundaryEvent|subprocess","diagram_element":"exact name from diagram","acceptance_criteria":["${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]"]}]
+Rules:
+- 1 object per main task or gateway
+- 3 acceptance_criteria per object maximum
+- GIVEN-WHEN-THEN format, max 15 words each
+- No apostrophes, no quotes inside text values
+- Output the JSON array only, nothing before or after
 
 Diagram:
 ${processedUml}`;
 
-  // Try models in order — first succeeds wins
-  const models = [
-    'google/gemma-3-27b-it:free',
-    'mistralai/mistral-small-3.2-24b-instruct:free',
-    'meta-llama/llama-3.3-70b-instruct:free'
-  ];
+  try {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
+        'X-Title': 'AC Generator'
+      },
+      body: JSON.stringify({
+        model: 'openrouter/auto',
+        temperature: 0.1,
+        max_tokens: 6000,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMsg }
+        ]
+      })
+    });
 
-  let lastError = null;
-
-  for (const model of models) {
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
-          'X-Title': 'AC Generator'
-        },
-        body: JSON.stringify({
-          model,
-          temperature: 0.1,
-          max_tokens: 6000,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMsg }
-          ]
-        })
-      });
-
-      const txt = await response.text();
-      if (!response.ok) {
-        let msg = 'HTTP ' + response.status;
-        try { msg = JSON.parse(txt).error?.message || msg; } catch {}
-        lastError = new Error(msg);
-        continue; // try next model
-      }
-
-      const data = JSON.parse(txt);
-      const raw = data?.choices?.[0]?.message?.content || '';
-      if (!raw.trim()) { lastError = new Error('Empty response'); continue; }
-
-      const start = raw.indexOf('['), end = raw.lastIndexOf(']');
-      if (start === -1 || end === -1) { lastError = new Error('No JSON found'); continue; }
-
-      let jsonStr = raw.slice(start, end + 1)
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-        .replace(/,(\s*[}\]])/g, '$1');
-
-      let items;
-      try {
-        items = JSON.parse(jsonStr);
-      } catch {
-        const lastComplete = jsonStr.lastIndexOf('},');
-        if (lastComplete > 0) {
-          try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
-            lastError = new Error('JSON parse failed');
-            continue;
-          }
-        } else {
-          lastError = new Error('JSON parse failed');
-          continue;
-        }
-      }
-
-      if (!Array.isArray(items) || !items.length) {
-        lastError = new Error('Empty array');
-        continue;
-      }
-
-      return res.status(200).json({ items, model_used: model });
-
-    } catch (err) {
-      lastError = err;
-      continue;
+    const txt = await response.text();
+    if (!response.ok) {
+      let msg = 'HTTP ' + response.status;
+      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
+      return res.status(500).json({ error: msg });
     }
-  }
 
-  return res.status(500).json({ error: lastError?.message || 'Bütün modellər xəta verdi. Yenidən cəhd edin.' });
+    const data = JSON.parse(txt);
+    const raw = data?.choices?.[0]?.message?.content || '';
+    if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
+
+    // Find JSON array boundaries
+    const start = raw.indexOf('[');
+    let end = raw.lastIndexOf(']');
+    if (start === -1) return res.status(500).json({ error: 'JSON array tapilmadi', raw: raw.slice(0, 200) });
+
+    let jsonStr = raw.slice(start, end + 1);
+
+    // Clean LLM JSON artifacts
+    jsonStr = jsonStr
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')  // control chars except \t\n\r
+      .replace(/,(\s*[}\]])/g, '$1')                        // trailing commas
+      .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');       // unquoted keys
+
+    // Try to parse, if fails try to recover truncated JSON
+    let items;
+    try {
+      items = JSON.parse(jsonStr);
+    } catch (e1) {
+      // Try to recover: find last complete object
+      const lastComplete = jsonStr.lastIndexOf('},');
+      if (lastComplete > 0) {
+        const recovered = jsonStr.slice(0, lastComplete + 1) + ']';
+        try {
+          items = JSON.parse(recovered);
+        } catch (e2) {
+          return res.status(500).json({
+            error: 'JSON parse edilemedi. Fayl cox boyukdur, bolub ayri-ayri gonderin.',
+            detail: e1.message
+          });
+        }
+      } else {
+        return res.status(500).json({
+          error: 'JSON parse edilemedi: ' + e1.message,
+          raw: jsonStr.slice(0, 200)
+        });
+      }
+    }
+
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(500).json({ error: 'Bos array qaytarildi' });
+    }
+
+    return res.status(200).json({ items });
+
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 }
+
+
+
+
+
