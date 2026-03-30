@@ -107,7 +107,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-4-maverick:free',
+        stepfun/step-3.5-flash:free
         temperature: 0.1,
         max_tokens: 8000,
         messages: [
