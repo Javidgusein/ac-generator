@@ -107,7 +107,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        stepfun/step-3.5-flash:free
+        nvidia/nemotron-3-super-120b-a12b:free
         temperature: 0.1,
         max_tokens: 8000,
         messages: [
