@@ -52,32 +52,49 @@ export default async function handler(req, res) {
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior Business Analyst expert in Gherkin BDD Acceptance Criteria writing.
-Output ONLY a raw JSON array. No markdown, no explanation, no code fences. Start with [ end with ].
+  const systemPrompt = `You are a senior Business Analyst with 10+ years of experience writing Acceptance Criteria in Gherkin BDD format for enterprise software projects.
 
-STRICT RULES:
-- Each AC must be UNIQUE - never repeat the same sentence in any item
-- Each AC MUST follow exact format: "${given} [specific context] ${when} [specific action] ${then} [specific verifiable result]"
-- ${given} = specific precondition or system state before the action
-- ${when} = the exact user action or system trigger that occurs
-- ${then} = the specific, measurable system response or outcome
-- All text values must be in ${langLabel} language only
-- No apostrophes or special quotes inside JSON string values`;
+YOUR MISSION: Analyze the provided diagram and extract COMPLETE, PROFESSIONAL Acceptance Criteria for EVERY single element.
 
-  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) completely end-to-end. Write Acceptance Criteria in ${langLabel} for every task, gateway, and event.
+ABSOLUTE RULES - NEVER BREAK THESE:
+1. OUTPUT: Only a raw JSON array. Zero explanation. Zero markdown. Zero code fences. Start with [ end with ]
+2. COMPLETENESS: Extract AC for EVERY task, gateway, event, subprocess, lane - do not skip any element
+3. UNIQUENESS: Every single AC item must be completely different - NEVER repeat the same sentence
+4. FORMAT: Every AC must follow EXACTLY: "${given} [specific precondition] ${when} [specific trigger/action] ${then} [specific measurable outcome]"
+   - ${given} = the exact system state or user context BEFORE the action
+   - ${when} = the precise user action OR system event that occurs
+   - ${then} = the specific, testable system response or business outcome
+5. LANGUAGE: Write ALL title and acceptance_criteria text in ${langLabel} ONLY
+6. COVERAGE: For gateways write separate AC for EACH branch/path
+7. QUALITY: Each AC must be testable by a QA engineer - avoid vague statements
+8. COUNT: Write exactly 4-5 AC per element - no more, no less`;
 
-JSON format:
-[{"id":"AC-001","title":"element title in ${langLabel}","priority":"High|Medium|Low","element_type":"userTask|serviceTask|gateway|startEvent|endEvent|boundaryEvent|subprocess","diagram_element":"exact name from diagram","acceptance_criteria":["${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]","${given} [context] ${when} [action] ${then} [result]"]}]
+  const userMsg = `Analyze this COMPLETE ${diagLabel} (format: ${fmtLabel}) from start to finish.
 
-Rules:
-- 1 object per main task, gateway, or event
-- 3-5 unique AC per object
-- For gateways: cover each decision branch as separate AC
-- For error events: write AC for the error scenario
-- NEVER write the same text twice across any AC items
-- Output JSON array only, nothing before or after
+CRITICAL: The number of AC objects must be the SAME regardless of output language. Do not produce fewer items in ${langLabel} than you would in English.
 
-Diagram:
+For EVERY element in the diagram create one JSON object. Cover the full end-to-end flow.
+
+JSON format (strict):
+[
+  {
+    "id": "AC-001",
+    "title": "descriptive title of the element in ${langLabel}",
+    "priority": "High|Medium|Low",
+    "element_type": "userTask|serviceTask|exclusiveGateway|parallelGateway|startEvent|endEvent|boundaryEvent|subprocess|lane",
+    "diagram_element": "exact element name as it appears in diagram",
+    "acceptance_criteria": [
+      "${given} [specific context] ${when} [specific action] ${then} [specific result]",
+      "${given} [specific context] ${when} [specific action] ${then} [specific result]",
+      "${given} [specific context] ${when} [specific action] ${then} [specific result]",
+      "${given} [specific context] ${when} [specific action] ${then} [specific result]"
+    ]
+  }
+]
+
+DO NOT skip elements. DO NOT merge elements. DO NOT repeat AC text. Output JSON array only.
+
+Diagram to analyze:
 ${processedUml}`;
 
   try {
@@ -92,7 +109,7 @@ ${processedUml}`;
       body: JSON.stringify({
         model: 'openrouter/auto',
         temperature: 0.1,
-        max_tokens: 6000,
+        max_tokens: 8000,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userMsg }
@@ -113,7 +130,7 @@ ${processedUml}`;
 
     const start = raw.indexOf('[');
     const end = raw.lastIndexOf(']');
-    if (start === -1) return res.status(500).json({ error: 'JSON array tapilmadi', raw: raw.slice(0, 200) });
+    if (start === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
 
     let jsonStr = raw.slice(start, end + 1)
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
@@ -126,20 +143,13 @@ ${processedUml}`;
     } catch (e1) {
       const lastComplete = jsonStr.lastIndexOf('},');
       if (lastComplete > 0) {
-        const recovered = jsonStr.slice(0, lastComplete + 1) + ']';
         try {
-          items = JSON.parse(recovered);
-        } catch (e2) {
-          return res.status(500).json({
-            error: 'JSON parse edilemedi. Fayl cox boyukdur.',
-            detail: e1.message
-          });
+          items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']');
+        } catch {
+          return res.status(500).json({ error: 'JSON parse xetasi: ' + e1.message });
         }
       } else {
-        return res.status(500).json({
-          error: 'JSON parse edilemedi: ' + e1.message,
-          raw: jsonStr.slice(0, 200)
-        });
+        return res.status(500).json({ error: 'JSON parse xetasi: ' + e1.message });
       }
     }
 
