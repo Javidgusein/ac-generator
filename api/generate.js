@@ -24,14 +24,20 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  const systemPrompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ].`;
+  const systemPrompt = `You are a senior business analyst specializing in ${isBpmn ? 'BPMN/Camunda process analysis' : 'UML diagram analysis'}. Extract Acceptance Criteria from diagrams. Output ONLY a valid JSON array. No explanation, no markdown, no code fences. Start with [ end with ]. IMPORTANT: Use only double quotes in JSON. Never use single quotes, apostrophes, or special characters inside string values.`;
 
   const userMsg = `Analyze this ${diagLabel} (format: ${fmtLabel}). Output in ${langLabel}.
 
 JSON format:
 [{"id":"AC-001","title":"step title","priority":"High|Medium|Low","element_type":"task|gateway|event|subprocess|lane","diagram_element":"exact name","acceptance_criteria":["Given [pre] When [action] Then [result]"]}]
 
-Rules: 1 item per main task/gateway/event, 3-5 AC each, strict GIVEN-WHEN-THEN, for gateways cover each branch, short testable sentences.
+Rules:
+- 1 item per main task/gateway/event
+- 3-5 AC each in strict GIVEN-WHEN-THEN format
+- For gateways cover each branch
+- Short testable sentences
+- NO apostrophes or special chars in text values
+- Output ONLY the JSON array, nothing else
 
 Diagram:
 ${uml}`;
@@ -47,7 +53,7 @@ ${uml}`;
       },
       body: JSON.stringify({
         model: 'openrouter/auto',
-        temperature: 0.2,
+        temperature: 0.1,
         max_tokens: 4000,
         messages: [
           { role: 'system', content: systemPrompt },
@@ -65,13 +71,39 @@ ${uml}`;
 
     const data = JSON.parse(txt);
     const raw = data?.choices?.[0]?.message?.content || '';
-    if (!raw.trim()) return res.status(500).json({ error: 'Model boş cavab qaytardı' });
+    if (!raw.trim()) return res.status(500).json({ error: 'Model bos cavab qaytardi' });
 
-    const start = raw.indexOf('['), end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapılmadı', raw: raw.slice(0, 200) });
+    // Extract JSON array
+    const start = raw.indexOf('[');
+    const end = raw.lastIndexOf(']');
+    if (start === -1 || end === -1) {
+      return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 300) });
+    }
 
-    const items = JSON.parse(raw.slice(start, end + 1));
-    if (!Array.isArray(items) || !items.length) return res.status(500).json({ error: 'Boş array' });
+    let jsonStr = raw.slice(start, end + 1);
+
+    // Clean common JSON issues from LLM output
+    jsonStr = jsonStr
+      .replace(/[\u0000-\u001F\u007F]/g, ' ') // remove control characters
+      .replace(/,\s*}/g, '}')                  // trailing commas in objects
+      .replace(/,\s*]/g, ']')                  // trailing commas in arrays
+      .replace(/\\'/g, "'")                    // escaped single quotes
+      .replace(/([^\\])'/g, "$1\u2019");       // unescaped single quotes to curly apostrophe
+
+    let items;
+    try {
+      items = JSON.parse(jsonStr);
+    } catch (e) {
+      // Last resort: try to extract individual objects
+      return res.status(500).json({ 
+        error: 'JSON parse xetasi: ' + e.message,
+        raw: jsonStr.slice(0, 300)
+      });
+    }
+
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(500).json({ error: 'Bos array qaytarildi' });
+    }
 
     return res.status(200).json({ items });
 
