@@ -107,7 +107,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'deepseek/deepseek-r1:free',
+        model: 'meta-llama/llama-4-maverick:free',
         temperature: 0.1,
         max_tokens: 8000,
         messages: [
