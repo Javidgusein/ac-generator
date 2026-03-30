@@ -107,7 +107,7 @@ ${processedUml}`;
         'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        nvidia/nemotron-3-super-120b-a12b:free
+        arcee-ai/trinity-large-preview:freeidia/nemotron-3-super-120b-a12b:free
         temperature: 0.1,
         max_tokens: 8000,
         messages: [
