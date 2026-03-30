@@ -5,31 +5,24 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { uml, diagType, fmt, lang } = req.body;
+  const { uml, diagType, fmt } = req.body;
   if (!uml) return res.status(400).json({ error: 'Content is required' });
 
   const diagLabel = {
-    'use-case': 'Use Case Diagram', 'sequence': 'Sequence Diagram',
-    'class': 'Class Diagram', 'activity': 'Activity Diagram', 'bpmn': 'BPMN Process Diagram'
+    'use-case': 'Use Case Diagram',
+    'sequence': 'Sequence Diagram',
+    'class': 'Class Diagram',
+    'activity': 'Activity Diagram',
+    'bpmn': 'BPMN Process Diagram'
   }[diagType] || 'Activity Diagram';
 
   const fmtLabel = {
-    'auto': 'auto-detected', 'mermaid': 'Mermaid',
-    'plantuml': 'PlantUML', 'camunda-xml': 'Camunda BPMN XML'
+    'auto': 'auto-detected',
+    'mermaid': 'Mermaid',
+    'plantuml': 'PlantUML',
+    'camunda-xml': 'Camunda BPMN XML'
   }[fmt] || 'auto-detected';
 
-  const langLabel = {
-    'az': 'Azerbaijani', 'en': 'English', 'ru': 'Russian', 'tr': 'Turkish'
-  }[lang] || 'Azerbaijani';
-
-  const langKeywords = {
-    'az': { given: 'Verilmishdir', when: 'Ne zaman ki', then: 'Onda' },
-    'en': { given: 'Given', when: 'When', then: 'Then' },
-    'ru': { given: 'Dano', when: 'Kogda', then: 'Togda' },
-    'tr': { given: 'Verildiginde', when: 'Ne zaman', then: 'O zaman' }
-  }[lang] || { given: 'Given', when: 'When', then: 'Then' };
-
-  const { given, when, then } = langKeywords;
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
   let processedUml = uml;
@@ -52,54 +45,53 @@ export default async function handler(req, res) {
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `You are a senior Business Analyst with 10+ years of enterprise software experience. You write professional Acceptance Criteria that QA engineers can directly use for test case creation.
+  const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənin vəzifən ${isBpmn ? 'BPMN/Camunda' : 'UML'} diaqramlarını dərindən analiz edərək peşəkar Acceptance Criteria-lar yazmaqdir.
 
-THINKING PROCESS - before writing each AC, ask yourself:
-1. What is the BUSINESS PURPOSE of this element? What real-world action does it represent?
-2. Who is the ACTOR? (user, system, admin, external service?)
-3. What are the PRECONDITIONS needed before this step can happen?
-4. What SPECIFIC ACTION triggers this step?
-5. What is the MEASURABLE OUTCOME - what exactly changes in the system?
-6. What are the ALTERNATIVE PATHS? (error cases, gateway branches, edge cases)
+DÜŞÜNCƏ PROSESİ - hər element üçün özünə bu sualları ver:
+1. Bu elementin REAL BİZNES MƏQSƏDİ nədir? Hansı iş prosesini əhatə edir?
+2. KİM icra edir? İstifadəçimi, sistemmi, xarici servismi?
+3. Hansı ŞƏRTLƏRİ olmalıdır ki, bu addım icra edilsin?
+4. Nə baş verdikdə bu proses UĞURLU hesab olunur?
+5. Nə baş verdikdə UĞURSUZ hesab olunur? Xəta ssenarisləri nələrdir?
+6. Qaytarma nöqtəsi, timeout, məhdudiyyət varmı?
 
-RULES FOR QUALITY AC:
-- Each AC describes a DIFFERENT business scenario or edge case
-- Never copy the element name into the AC text - explain what it MEANS
-- For gateways: write one AC per each branch showing the decision logic
-- For tasks: write AC for happy path, validation, and error scenario
-- For events: write AC for trigger condition and system response
-- Be SPECIFIC: mention exact system behaviors, not vague descriptions
-- AC must be TESTABLE: a QA engineer must be able to write a test from it
+AC KƏYFİYYƏT STANDARTLARI:
+- Hər AC FƏRQLI bir biznes ssenarisi və ya edge case-i əhatə etməlidir
+- AC-lar ümumi deyil, SPESIFIK olmalıdır - dəqiq sistem davranışını əks etdirməlidir
+- Gateway elementləri üçün HƏR branch üçün ayrı AC yaz - qərar məntiqi aydın olmalıdır
+- Tapşırıqlar üçün: uğurlu axın, validasiya qaydaları, xəta halları
+- Sistem tərəfindən icra olunan addımlar üçün: giriş şərtləri, çıxış nəticəsi, uğursuzluq halı
+- AC mütləq TEST EDİLƏ BİLƏN olmalıdır - QA mühəndisi bu AC əsasında test yaza bilməlidir
+- Element adını mexaniki kopyalama - elementin NƏ ETDIYINI izah et
 
-LANGUAGE: Write ALL text in ${langLabel} only.
-OUTPUT: Raw JSON array only. No markdown. No explanation. Start with [ end with ].
-No apostrophes inside string values.`;
+QADAĞAN:
+- Eyni cümləni fərqli AC-larda təkrarlama
+- "sistem işləyir", "proses davam edir" kimi mənasız ifadələr
+- Element adını olduğu kimi AC mətninə kopyalama
 
-  const userMsg = `Analyze this ${diagLabel} (${fmtLabel}) and write professional Acceptance Criteria for EVERY element.
+ÇIXIŞ: Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.
+Bütün mətn Azərbaycan dilində olmalıdır.`;
 
-IMPORTANT QUALITY CHECKS before outputting:
-- Does each AC tell a UNIQUE story? If two ACs say similar things, rewrite one.
-- Does each AC reflect the REAL business logic, not just the element name?
-- For gateway elements: does each branch have its own AC with the specific condition?
-- Are all ACs testable by a QA engineer without needing more information?
+  const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını başdan-sona analiz et. Hər task, gateway, event və subprocess üçün peşəkar Acceptance Criteria yaz.
 
-JSON format:
+ÇIXIŞ FORMATI (yalnız JSON array):
 [{
   "id": "AC-001",
-  "title": "business-meaningful title in ${langLabel}",
+  "title": "elementin biznes mənasını əks etdirən başlıq",
   "priority": "High|Medium|Low",
   "element_type": "userTask|serviceTask|exclusiveGateway|parallelGateway|startEvent|endEvent|boundaryEvent|subprocess|lane",
-  "diagram_element": "exact element name from diagram",
+  "diagram_element": "diaqramdakı elementin dəqiq adı",
   "acceptance_criteria": [
-    "${given} [specific business context] ${when} [specific user or system action] ${then} [specific measurable system response]",
-    "${given} [different context] ${when} [different action or condition] ${then} [different outcome]",
-    "${given} [error or edge case context] ${when} [trigger for edge case] ${then} [how system handles it]"
+    "Sistem [spesifik şərt olduqda] [spesifik davranışı] icra etməlidir",
+    "İstifadəçi [spesifik şərt altında] [spesifik əməliyyatı] edə bilməlidir",
+    "[Xüsusi vəziyyət] baş verdikdə sistem [spesifik reaksiya] verməlidir",
+    "[Xəta/uğursuzluq halında] sistem [spesifik davranış] göstərməlidir"
   ]
 }]
 
-Write in ${langLabel}. Output JSON array only.
+Azərbaycan dilində yaz. Yalnız JSON array çıxar.
 
-Diagram:
+Diaqram:
 ${processedUml}`;
 
   const models = [
