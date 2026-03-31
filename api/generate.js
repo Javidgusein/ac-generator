@@ -67,7 +67,7 @@ DOĞRUNUN nümunəsi - BU CÜR YAZ:
 HƏR ELEMENT ÜÇÜN DÜŞÜNMƏLİ OLDUĞUN SUALLAR:
 1. Bu task/qərar/hadisə REAL HƏYATDA nə deməkdir? Hansı biznes prosesini idarə edir?
 2. Bu elementin düzgün icra olunması üçün SİSTEM nə etməlidir?
-3. Hansı VALİDASİYA qaydaları tətbiq edilməlidir?
+3. Hansı VАLİDASİYA qaydaları tətbiq edilməlidir?
 4. Hansı MƏHDUDİYYƏTLƏR var? (status, icazə, limit, format)
 5. XƏTA halında sistem nə etməlidir?
 6. Gateway üçün: hər QƏRAR BRANCH-ı hansı biznes şərtinə əsaslanır?
@@ -104,59 +104,99 @@ Azərbaycan dilində yaz. Yalnız JSON array çıxar.
 Diaqram:
 ${processedUml}`;
 
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.Claude_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMsg }]
-      })
-    });
+  const models = [
+    'openrouter/auto',
+    'meta-llama/llama-3.3-70b-instruct:free',
+    'mistralai/mistral-small-3.1-24b-instruct:free',
+    'google/gemma-3-27b-it:free'
+  ];
 
-    const txt = await response.text();
-    if (!response.ok) {
-      let msg = 'HTTP ' + response.status;
-      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
-      return res.status(500).json({ error: msg });
-    }
+  let lastError = null;
 
-    const data = JSON.parse(txt);
-    const raw = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-    if (!raw.trim()) return res.status(500).json({ error: 'Bos cavab' });
-
-    const start = raw.indexOf('[');
-    const end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
-
-    let jsonStr = raw.slice(start, end + 1)
-      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
-      .replace(/,(\s*[}\]])/g, '$1');
-
-    let items;
+  for (const model of models) {
     try {
-      items = JSON.parse(jsonStr);
-    } catch {
-      const lastComplete = jsonStr.lastIndexOf('},');
-      if (lastComplete > 0) {
-        try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
-          return res.status(500).json({ error: 'JSON parse xetasi' });
-        }
-      } else {
-        return res.status(500).json({ error: 'JSON parse xetasi' });
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
+          'X-Title': 'AC Generator'
+        },
+        body: JSON.stringify({
+          model,
+          temperature: 0.2,
+          max_tokens: 6000,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMsg }
+          ]
+        })
+      });
+
+      const txt = await response.text();
+
+      if (!txt || txt.trim().startsWith('<') || txt.trim().startsWith('A server')) {
+        lastError = new Error('Server xetasi: ' + txt.slice(0, 80));
+        continue;
       }
+
+      if (!response.ok) {
+        let msg = 'HTTP ' + response.status;
+        try { msg = JSON.parse(txt).error?.message || msg; } catch {}
+        lastError = new Error(msg);
+        continue;
+      }
+
+      let data;
+      try { data = JSON.parse(txt); } catch {
+        lastError = new Error('Response parse xetasi');
+        continue;
+      }
+
+      const raw = data?.choices?.[0]?.message?.content || '';
+      if (!raw.trim()) { lastError = new Error('Bos cavab'); continue; }
+
+      const start = raw.indexOf('[');
+      const end = raw.lastIndexOf(']');
+      if (start === -1 || end === -1) { lastError = new Error('JSON tapilmadi'); continue; }
+
+      let jsonStr = raw.slice(start, end + 1)
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .replace(/,(\s*[}\]])/g, '$1')
+        .replace(/([{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+
+      let items;
+      try {
+        items = JSON.parse(jsonStr);
+      } catch {
+        const lastComplete = jsonStr.lastIndexOf('},');
+        if (lastComplete > 0) {
+          try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
+            lastError = new Error('JSON parse xetasi');
+            continue;
+          }
+        } else {
+          lastError = new Error('JSON parse xetasi');
+          continue;
+        }
+      }
+
+      if (!Array.isArray(items) || !items.length) {
+        lastError = new Error('Bos array');
+        continue;
+      }
+
+      return res.status(200).json({ items });
+
+    } catch (err) {
+      lastError = err;
+      continue;
     }
-
-    if (!Array.isArray(items) || !items.length) return res.status(500).json({ error: 'Bos array' });
-    return res.status(200).json({ items });
-
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
   }
+
+  return res.status(500).json({
+    error: 'Butun modeller xeta verdi. Bir az gozleyib yeniden ced edin.',
+    detail: lastError?.message
+  });
 }
