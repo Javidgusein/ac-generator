@@ -45,44 +45,56 @@ export default async function handler(req, res) {
     if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
   }
 
-  const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənin vəzifən ${isBpmn ? 'BPMN/Camunda' : 'UML'} diaqramlarını analiz edərək peşəkar Acceptance Criteria-lar yazmaqdır.
+  const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda' : 'UML'} diaqramı veriləcək. Sənin vəzifən bu diaqramdakı HƏR TASK, GATEWAY və EVENT üçün REAL BİZNES TƏLƏBLƏRİ şəklində Acceptance Criteria yazmaqdir.
 
-AC NÜMUNƏLƏRİ - məhz bu formada yazmalısan:
-- "Sistem istifadəçi daxil etdiyi e-poçt ünvanının formatını yoxlamalı və düzgün format olmadıqda istifadəçiyə xəta mesajı göstərməlidir."
-- "Sistem uğursuz login cəhdlərini qeyd etməli və 5 ardıcıl uğursuz cəhddən sonra istifadəçi hesabını müvəqqəti bloklamalıdır."
+ƏN VACIB QAYDA:
+Sən diaqramı TƏRIF ETMİRSƏN. Sən diaqramdakı hər elementin arxasındakı BİZNES TƏLƏBLƏRİNİ yazırsan.
+
+YANLIŞIN nümunəsi - BU CÜR YAZMA:
+- "Bu task növbəti taska keçid edir."
+- "Proses bu addımdan sonra davam edir."
+- "İstifadəçi formu doldurduqdan sonra növbəti addıma keçir."
+- "Sistem bu tapşırığı icra edir."
+
+DOĞRUNUN nümunəsi - BU CÜR YAZ:
+- "Sistem istifadəçi daxil etdiyi e-poçt ünvanının formatını yoxlamalı və düzgün format olmadıqda xəta mesajı göstərməlidir."
+- "Sistem uğursuz cəhdləri qeyd etməli və 5 ardıcıl uğursuz cəhddən sonra hesabı müvəqqəti bloklamalıdır."
 - "Sistem sifariş yalnız Draft statusunda olduqda redaktə edilməsinə icazə verməlidir."
 - "Sistem istifadəçi sessiyası 15 dəqiqə aktivlik olmadıqda avtomatik olaraq sona çatdırılmalıdır."
-- "Sistem sistem xətaları baş verdikdə istifadəçiyə ümumi xəta mesajı göstərməli və texniki detalları log faylında saxlamalıdır."
+- "Sistem məlumat bazasında saxlanılan bütün kritik əməliyyatları audit log-da qeyd etməlidir."
+- "Sistem sistem xətaları baş verdikdə istifadəçiyə ümumi xəta mesajı göstərməli, texniki detalları log faylında saxlamalıdır."
 
-AC YAZMA QAYDALARI:
-1. Hər AC "Sistem ..." və ya "İstifadəçi ..." ilə başlamalıdır
-2. Cümlə aydın, spesifik və test edilə bilən olmalıdır
-3. Biznes qaydalarını, validasiyaları, məhdudiyyətləri əks etdirməlidir
-4. Xəta halları, uğursuzluq ssenarilərini əhatə etməlidir
-5. Gateway-lər üçün hər qərar branch-ı ayrı AC kimi yazılmalıdır
-6. Element adını mexaniki kopyalama - o elementin nə etdiyini izah et
-7. Eyni məzmunlu AC-ları təkrarlama
-8. Ümumi və mənasız ifadələrdən çəkin: "sistem işləyir", "proses davam edir"
+HƏR ELEMENT ÜÇÜN DÜŞÜNMƏLİ OLDUĞUN SUALLAR:
+1. Bu task/qərar/hadisə REAL HƏYATDA nə deməkdir? Hansı biznes prosesini idarə edir?
+2. Bu elementin düzgün icra olunması üçün SİSTEM nə etməlidir?
+3. Hansı VАLİDASİYA qaydaları tətbiq edilməlidir?
+4. Hansı MƏHDUDİYYƏTLƏR var? (status, icazə, limit, format)
+5. XƏTA halında sistem nə etməlidir?
+6. Gateway üçün: hər QƏRAR BRANCH-ı hansı biznes şərtinə əsaslanır?
 
-ÇIXIŞ: Yalnız xam JSON array. Markdown yoxdur. Açıqlama yoxdur. [ ilə başla ] ilə bitir.
-Bütün mətn Azərbaycan dilində.`;
+AC YAZMA FORMATI:
+- Hər cümlə "Sistem ..." və ya "İstifadəçi ..." ilə başlamalıdır
+- Cümlə konkret, ölçülə bilən, test edilə bilən olmalıdır
+- Biznes qaydaları, validasiyalar, məhdudiyyətlər əks olunmalıdır
+- Yalnız Azərbaycan dilində yaz
 
-  const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını başdan-sona analiz et.
+ÇIXIŞ: Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
 
-Hər task, gateway, event üçün peşəkar Acceptance Criteria yaz.
-Hər AC nümunələrdəki kimi aydın, spesifik biznes tələbi olmalıdır.
+  const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını analiz et.
+
+Hər task, gateway və event üçün REAL BİZNES TƏLƏBLƏRİ yaz — diaqramı təsvir etmə, sistemin NƏ etməli olduğunu yaz.
 
 JSON FORMAT:
 [{
   "id": "AC-001",
-  "title": "prosesin biznes mənasını əks etdirən qısa başlıq",
+  "title": "elementin biznes funksiyasını əks etdirən başlıq",
   "priority": "High|Medium|Low",
   "element_type": "userTask|serviceTask|exclusiveGateway|parallelGateway|startEvent|endEvent|boundaryEvent|subprocess",
   "diagram_element": "diaqramdakı elementin dəqiq adı",
   "acceptance_criteria": [
-    "Sistem [spesifik biznes qaydası və ya validasiya].",
-    "Sistem [xəta halı və ya məhdudiyyət].",
-    "Sistem [uğurlu ssenari üçün gözlənilən davranış].",
+    "Sistem [spesifik biznes tələbi və ya validasiya qaydası].",
+    "Sistem [məhdudiyyət və ya xəta halı üçün davranış].",
+    "Sistem [uğurlu ssenari üçün gözlənilən nəticə].",
     "İstifadəçi [icazə verilən və ya qadağan olan əməliyyat]."
   ]
 }]
