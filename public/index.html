@@ -35,8 +35,11 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .ftoggle{display:flex;gap:5px;flex-wrap:wrap}
 .fbtn{flex:1;min-width:0;padding:6px 4px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:7px;font-size:10px;color:var(--muted);cursor:pointer;transition:all .15s;white-space:nowrap}
 .fbtn.active{border-color:var(--accent2);background:rgba(0,212,170,0.1);color:var(--accent2)}
-.lselect{width:100%;padding:8px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;cursor:pointer;appearance:none}
-.lselect:focus{outline:none;border-color:var(--accent)}
+.lang-grid{display:flex;flex-direction:column;gap:5px}
+.lang-btn{padding:8px 11px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:11px;color:var(--muted);cursor:default;display:flex;align-items:center;justify-content:space-between}
+.lang-btn.active{border-color:var(--accent);background:rgba(120,100,255,0.12);color:var(--text)}
+.lang-btn.disabled{opacity:0.5}
+.soon-badge{font-size:9px;background:rgba(255,185,0,0.15);color:#ffb900;border:1px solid rgba(255,185,0,0.3);padding:1px 6px;border-radius:4px;white-space:nowrap}
 .genbtn{width:100%;padding:13px;background:linear-gradient(135deg,var(--accent),#5a48e0);border:none;border-radius:var(--r);color:#fff;font-size:13px;font-weight:700;cursor:pointer;transition:all .2s;margin-top:auto;letter-spacing:.2px}
 .genbtn:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(120,100,255,.4)}
 .genbtn:active{transform:translateY(0)}
@@ -69,13 +72,13 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .pbadge{font-size:9px;padding:2px 7px;border-radius:3px;flex-shrink:0}
 .ph{background:rgba(255,107,107,0.15);color:#ff6b6b}.pm{background:rgba(255,185,0,.12);color:#ffb900}.pl{background:rgba(0,212,170,.12);color:var(--accent2)}
 .etag{font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(120,100,255,.12);color:#a89dff;flex-shrink:0}
-.card-body{padding:13px 15px}
+.card-body{padding:14px 15px}
 .acblock{background:rgba(0,212,170,.05);border-left:2px solid var(--accent2);border-radius:0 8px 8px 0;padding:10px 13px}
 .blabel{font-size:9px;letter-spacing:1.2px;text-transform:uppercase;color:var(--accent2);margin-bottom:8px;font-weight:600}
-.aclist{list-style:none;display:flex;flex-direction:column;gap:7px}
-.aclist li{font-size:11px;line-height:1.65;padding-left:16px;position:relative}
-.aclist li::before{content:"✓";position:absolute;left:0;color:var(--accent2);font-size:10px;font-weight:700;top:1px}
-.card-foot{padding:8px 15px;border-top:1px solid var(--border);display:flex;align-items:center;gap:6px}
+.aclist{list-style:none;display:flex;flex-direction:column;gap:8px}
+.aclist li{font-size:12px;line-height:1.7;padding-left:24px;position:relative;color:var(--text)}
+.acnum{position:absolute;left:0;color:var(--accent2);font-weight:700;font-size:11px}
+.card-foot{padding:8px 15px;border-top:1px solid var(--border);display:flex;justify-content:flex-end}
 .dtag{font-size:9px;color:var(--muted);background:rgba(255,255,255,.04);padding:2px 6px;border-radius:3px}
 .copybtn{margin-left:auto;padding:3px 9px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:10px;cursor:pointer;transition:all .15s;flex-shrink:0}
 .copybtn:hover{color:var(--accent);border-color:var(--accent)}.copybtn.ok{color:var(--accent2);border-color:var(--accent2)}
@@ -92,7 +95,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <div class="htitle">Acceptance Criteria Generator</div>
     <div class="hsub">UML &amp; BPMN diaqramlarından avtomatik AC çıxarışı</div>
   </div>
-  <div class="hbadge">By Javid Gusein</div>
+  <div class="hbadge">Claude-powered</div>
 </header>
 
 <div class="layout">
@@ -137,14 +140,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     </div>
     <div>
       <div class="slabel">Çıxış Dili</div>
-      <select class="lselect" id="lang">
-        <option value="az">Azərbaycan dili</option>
-        <option value="en">English</option>
-        <option value="ru">Русский</option>
-        <option value="tr">Türkçe</option>
-      </select>
+      <div class="lang-grid">
+        <div class="lang-btn active">Azərbaycan dili</div>
+        <div class="lang-btn disabled">English <span class="soon-badge">optimallaşdırma gedir</span></div>
+        <div class="lang-btn disabled">Русский <span class="soon-badge">optimallaşdırma gedir</span></div>
+        <div class="lang-btn disabled">Türkçe <span class="soon-badge">optimallaşdırma gedir</span></div>
+      </div>
     </div>
-    <button class="genbtn" id="genbtn" disabled>✦ Generate Acceptance Criteria </button>
+    <button class="genbtn" id="genbtn" disabled>✦ Acceptance Criteria Çıxar</button>
   </aside>
 
   <main class="right">
@@ -212,7 +215,7 @@ function runGenerate(){
     body:JSON.stringify({
       uml:fileContent.replace(/\r/g,'').trim(),
       diagType:diagType,fmt:umlFmt,
-      lang:document.getElementById('lang').value
+      lang:'az'
     })
   })
   .then(function(res){return res.json().then(function(d){return{ok:res.ok,data:d};});})
@@ -230,15 +233,23 @@ function runGenerate(){
 }
 
 function renderCards(items){
-  var diagLabel={'use-case':'Use Case','sequence':'Sequence','class':'Class','activity':'Activity','bpmn':'BPMN'}[diagType]||'';
   var el=document.getElementById('results');el.innerHTML='';
   document.getElementById('cnt').textContent=items.length;
   items.forEach(function(s,i){
     var pc={High:'ph',Medium:'pm',Low:'pl'}[s.priority]||'pm';
-    var ac=(s.acceptance_criteria||[]).map(function(a){return '<li>'+esc(a)+'</li>';}).join('');
-    var et=s.element_type?s.element_type.charAt(0).toUpperCase()+s.element_type.slice(1):'';
+    var ac=(s.acceptance_criteria||[]).map(function(a,idx){return '<li><span class="acnum">'+(idx+1)+'.</span>'+esc(a)+'</li>';}).join('');
     var div=document.createElement('div');div.className='card';div.style.animationDelay=(i*0.06)+'s';
-    div.innerHTML='<div class="card-head"><span class="acid">'+esc(s.id||'AC-'+pad(i+1))+'</span><span class="actitle">'+esc(s.title||'')+'</span>'+(et?'<span class="etag">'+esc(et)+'</span>':'')+'<span class="pbadge '+pc+'">'+esc(s.priority||'Medium')+'</span></div><div class="card-body"><div class="acblock"><div class="blabel">Acceptance Criteria</div><ul class="aclist">'+ac+'</ul></div></div><div class="card-foot"><span class="dtag">'+esc(diagLabel)+'</span>'+(s.diagram_element?'<span class="dtag">'+esc(s.diagram_element)+'</span>':'')+'<button class="copybtn" data-i="'+i+'">kopyala</button></div>';
+    div.innerHTML=
+      '<div class="card-head">'+
+        '<span class="actitle">'+esc(s.title||'')+'</span>'+
+        '<span class="pbadge '+pc+'">'+esc(s.priority||'Medium')+'</span>'+
+      '</div>'+
+      '<div class="card-body">'+
+        '<ul class="aclist">'+ac+'</ul>'+
+      '</div>'+
+      '<div class="card-foot">'+
+        '<button class="copybtn" data-i="'+i+'">kopyala</button>'+
+      '</div>';
     el.appendChild(div);
   });
   el.querySelectorAll('.copybtn').forEach(function(b){
@@ -252,8 +263,11 @@ document.getElementById('copyAll').addEventListener('click',function(){
   navigator.clipboard.writeText(allItems.map(itemToText).join('\n\n'+'─'.repeat(50)+'\n\n'));showToast('Hamısı kopyalandı ✓');
 });
 document.getElementById('exportBtn').addEventListener('click',function(){
-  var rows=allItems.map(function(s){var ac=(s.acceptance_criteria||[]).map(function(a){return '<li>'+a+'</li>';}).join('');return '<h2>'+s.id+' — '+s.title+(s.element_type?' ['+s.element_type+']':'')+' ('+s.priority+')</h2>'+(s.diagram_element?'<p style="color:#666;font-size:10pt">Element: '+s.diagram_element+'</p>':'')+'<h3>Acceptance Criteria</h3><ol>'+ac+'</ol><hr/>';}).join('');
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>body{font-family:Calibri,sans-serif;font-size:11pt;margin:2cm}h2{color:#0d6e5c;font-size:13pt;margin-top:22px}h3{font-size:11pt;color:#555;margin-top:8px}ol{margin:4px 0 10px;padding-left:20px}li{margin-bottom:5px;line-height:1.5}hr{border:none;border-top:1px solid #ddd;margin:18px 0}</style></head><body><h1 style="font-size:17pt;color:#0d6e5c;border-bottom:2px solid #0d6e5c;padding-bottom:6px">Acceptance Criteria Report</h1><hr/>'+rows+'</body></html>';
+  var rows=allItems.map(function(s){
+    var ac=(s.acceptance_criteria||[]).map(function(a,i){return '<li>'+a+'</li>';}).join('');
+    return '<h2>'+esc(s.title||'')+'</h2><ol>'+ac+'</ol><hr/>';
+  }).join('');
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"/><style>body{font-family:Calibri,sans-serif;font-size:11pt;margin:2cm}h2{color:#0d6e5c;font-size:13pt;margin-top:22px;margin-bottom:8px}ol{margin:4px 0 10px;padding-left:20px}li{margin-bottom:6px;line-height:1.6}hr{border:none;border-top:1px solid #ddd;margin:20px 0}</style></head><body><h1 style="font-size:17pt;color:#0d6e5c;border-bottom:2px solid #0d6e5c;padding-bottom:6px">Acceptance Criteria</h1><hr/>'+rows+'</body></html>';
   var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([html],{type:'application/msword'}));a.download='acceptance-criteria.doc';a.click();showToast('Word faylı yükləndi ✓');
 });
 
@@ -265,7 +279,10 @@ function showState(s,msg){
   document.getElementById('results').style.display=s==='results'?'block':'none';
   if(s==='error'&&msg)document.getElementById('errtxt').textContent=msg;
 }
-function itemToText(s){var ac=(s.acceptance_criteria||[]).map(function(a,i){return '  '+(i+1)+'. '+a;}).join('\n');return '['+s.id+'] '+s.title+' ('+s.priority+')'+(s.diagram_element?'\nElement: '+s.diagram_element:'')+'\n\nAcceptance Criteria:\n'+ac;}
+function itemToText(s){
+  var ac=(s.acceptance_criteria||[]).map(function(a,i){return (i+1)+'. '+a;}).join('\n');
+  return s.title+'\n\n'+ac;
+}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function pad(n){return String(n).padStart(3,'0');}
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
