@@ -26,24 +26,16 @@ export default async function handler(req, res) {
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
   // ─── BPMN PREPROCESSING ───────────────────────────────────────────────────
-  // Əvvəlki versiyada TextAnnotation-lar, flow adları (şərt mətni), gateway
-  // adları kəsilirdi. Bu məlumatlar AC üçün ən vacibdir — indi saxlanılır.
   let processedUml = uml;
   if (isBpmn && uml.length > 12000) {
     const lines = uml.split('\n');
     const keep = lines.filter(l => {
       const t = l.trim();
-      // Boş sətirləri at
       if (!t) return false;
-      // DI/görsel koordinat bloklarını at (bunlar biznes mənası daşımır)
-      if (t.match(/BPMNEdge|BPMNShape|waypoint|Bounds|BPMNLabel/)) return false;
-      if (t.match(/dc:Bounds|di:waypoint|bpmndi:/)) return false;
-      // Qalan hər şeyi saxla: task adları, annotation mətnləri,
-      // gateway adları, flow adları (şərtlər), lane adları, event adları
+      if (t.match(/BPMNEdge|BPMNShape|waypoint|dc:Bounds|di:waypoint|bpmndi:/)) return false;
       return true;
     });
     processedUml = keep.join('\n');
-    // Hələ də böyükdürsə, strukturu qoru amma DI hissəsini kəs
     if (processedUml.length > 12000) {
       const diIdx = processedUml.indexOf('<bpmndi:BPMNDiagram');
       if (diIdx > 0) processedUml = processedUml.slice(0, diIdx) + '\n</bpmn:definitions>';
@@ -53,55 +45,55 @@ export default async function handler(req, res) {
 
   const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda XML' : 'UML'} diaqramı veriləcək.
 
-SƏNİN VƏZİFƏN:
-Diaqramdakı HƏR TASK, HƏR GATEWAY, HƏR EVENT və HƏR ANNOTATION üçün heç birini buraxmadan REAL BİZNES TƏLƏBLƏRİ şəklində Acceptance Criteria yaz.
+═══════════════════════════════════════════
+ƏN VACIB QAYDA — YALNIZ DİAQRAMDA OLANLAR
+═══════════════════════════════════════════
+Sən YALNIZ diaqramda açıq şəkildə yazılmış məlumatları əsas götürməlisən.
+Diaqramda yazılmayan heç bir şeyi uydurmaq QƏTI QADAĞANDIR.
+
+QADAĞAN OLAN DAVRANIŞLAR:
+❌ Diaqramda olmayan limit uydurmaq ("maksimum 500 simvol", "3 cəhd" kimi)
+❌ Diaqramda olmayan field uydurmaq ("nömrəsi, tarixi, məbləği, təsviri" kimi)
+❌ Diaqramda olmayan geri qayıtma məntiqi uydurmaq
+❌ Diaqramda olmayan vaxt məhdudiyyəti uydurmaq ("3 saniyə ərzində" kimi)
+❌ Diaqramda olmayan texniki detal uydurmaq ("LDAP", "audit log" — yalnız annotasiyada varsa yaz)
+❌ Ümumi "best practice" əlavə etmək — sənin vəzifən yalnız DİAQRAMI oxumaqdır
+
+DÜZGÜN DAVRANIŞLAR:
+✅ Task adı → bu əməliyyatın biznes məqsədini yaz
+✅ sequenceFlow name → gateway şərtini yaz (diaqramda yazılıb)
+✅ textAnnotation mətn → State və tarixçə dəyərini müvafiq task-ın AC-sına əlavə et (diaqramda yazılıb)
+✅ lane adı → kimin icra etdiyini yaz (diaqramda yazılıb)
+✅ boundaryEvent → xəta halının varlığını yaz, amma xəta detalını uydurmaq yoxdur
+✅ eventBasedGateway → hər outgoing event seçimini ayrı meyar kimi yaz (diaqramda yazılıb)
+
+YOXLAMA SUALIN:
+Hər AC cümləsi yazmadan əvvəl özünə sor:
+"Bu məlumat diaqramın hansı elementindən gəlir?"
+Əgər konkret element göstərə bilmirsənsə — O CÜMLƏNİ YAZMA.
 
 ═══════════════════════════════════════════
-BPMN XML OXUMA QAYDASI (çox vacib):
+BPMN XML OXUMA QAYDASI
 ═══════════════════════════════════════════
-• <bpmn:textAnnotation> içindəki mətn State və tarixçə məlumatlarını verir — bunları mütləq müvafiq task-ın AC-sına əlavə et.
-• <bpmn:sequenceFlow name="..."> içindəki ad gateway şərtini bildirir — hər şərt ayrı AC meyarı olmalıdır.
-• <bpmn:lane name="..."> rolları bildirir — AC-da "Sistem" və ya "İstifadəçi [rol adı]" şəklində yaz.
-• <bpmn:boundaryEvent> — xəta/timeout emal ssenarisi kimi AC yaz.
-• <bpmn:eventBasedGateway> — istifadəçiyə təqdim olunan hər seçim (hər outgoing event) ayrı AC meyarı olmalıdır.
-• Hər exclusiveGateway üçün HƏR çıxış branch-ı (outgoing sequenceFlow) üçün ayrı ssenari yaz (Ssenari A, Ssenari B, ...).
+• <bpmn:textAnnotation> — State və tarixçə məlumatları buradadır, müvafiq task-a əlavə et
+• <bpmn:sequenceFlow name="..."> — gateway şərti buradadır, hər branch ayrı ssenari olmalıdır
+• <bpmn:lane name="..."> — rollar buradadır, "İstifadəçi [rol]" şəklində yaz
+• <bpmn:boundaryEvent> — xəta/timeout mövcuddur, emal axını var deməkdir
+• <bpmn:eventBasedGateway> — hər outgoing event istifadəçi seçimidir
+• <bpmn:exclusiveGateway> — hər outgoing flow ayrı ssenari (Ssenari A, Ssenari B...)
 
-═══════════════════════════════════════════
-YAZMA QAYDALARI:
-═══════════════════════════════════════════
-❌ YAZMA (diaqram təsviri):
-- "Bu task növbəti taska keçid edir."
-- "Proses bu addımdan sonra davam edir."
-- "Gateway şərti yoxlayır."
-
-✅ YAZ (biznes tələbi):
-- "Sistem seçilmiş şəxsin müvafiq əməliyyat üzrə səlahiyyətini LDAP/rol registrindən real vaxtda sorğulamalı, nəticəni 3 saniyə ərzində qaytarmalıdır."
-- "Sistem status 'Akt icazəyə göndərilib' olaraq yenilədikdə dəyişiklik vaxtı, istifadəçi ID-si və köhnə status dəyəri audit log-da qeyd edilməlidir."
-- "Sistem xəta baş verdikdə istifadəçiyə texniki detallar göstərməməli, ümumi xəta mesajı ilə yönləndirməlidir; xəta stack trace-i server tərəfli log-da saxlanılmalıdır."
-- "Sistem cari tarixi (Yoxlamanın bitdiyi tarix + 10 gün) ilə müqayisə etməli; cari tarix bu həddən böyükdürsə əməliyyat avtomatik deaktiv edilməlidir."
-
-HƏR ELEMENT ÜÇÜN DÜŞÜN:
-1. Bu element real həyatda hansı biznes prosesini idarə edir?
-2. Validasiya qaydaları nələrdir? (format, status, limit, icazə)
-3. Xəta halında sistem nə etməlidir?
-4. Audit/tarixçə tələbi varmı? (annotation-da varsa mütləq yaz)
-5. Performans/vaxt tələbi varmı?
-6. Rol/səlahiyyət tələbi varmı?
-
-═══════════════════════════════════════════
 ÇIXIŞ FORMATI:
-═══════════════════════════════════════════
 Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
 
   const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını analiz et.
 
 TAPŞIRIQ:
-1. Diaqramdakı HƏR elementi (task, gateway, event, annotation) tap
-2. Hər biri üçün REAL BİZNES TƏLƏBLƏRİ yaz — diaqramı təsvir etmə
-3. TextAnnotation-larda State və tarixçə məlumatları varsa müvafiq task-ın AC-sına əlavə et
-4. Gateway-lərdə hər branch üçün ayrı ssenari yaz (Ssenari A, Ssenari B...)
-5. Boundary Event-lər üçün xəta emal ssenarisi yaz
-6. Heç bir elementi buraxma
+1. Diaqramdakı HƏR elementi tap: task, gateway, event, annotation
+2. Hər element üçün YALNIZ DİAQRAMDA OLAN məlumatları əsas götür
+3. textAnnotation-da State/tarixçə varsa — müvafiq task-ın AC-sına əlavə et
+4. sequenceFlow adları gateway şərtlərini verir — hər branch ayrı ssenari olsun
+5. Boundary Event varsa — xəta emal axınının mövcudluğunu yaz, detal uydurmaq yoxdur
+6. Heç bir elementi buraxma, heç bir şey uydurma
 
 JSON FORMAT:
 [{
@@ -112,12 +104,11 @@ JSON FORMAT:
   "diagram_element": "Diaqramdakı elementin dəqiq adı",
   "lane": "Elementin aid olduğu lane/rol adı (varsa)",
   "acceptance_criteria": [
-    "Sistem [spesifik biznes tələbi — validasiya, məhdudiyyət, davranış].",
-    "Sistem [xəta halı üçün davranış].",
-    "Sistem [audit/tarixçə tələbi — annotation-dan gələn məlumat].",
-    "İstifadəçi [rol üzrə icazə verilən/qadağan əməliyyat]."
+    "Sistem/İstifadəçi [YALNIZ DİAQRAMDA OLAN məlumata əsaslanan tələb]."
   ]
 }]
+
+Xatırla: Hər AC cümləsinin mənbəyi diaqramın konkret bir elementindən gəlməlidir.
 
 Azərbaycan dilində yaz. Yalnız JSON array çıxar.
 
@@ -125,7 +116,7 @@ Diaqram:
 ${processedUml}`;
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -133,33 +124,55 @@ ${processedUml}`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        // ✅ Haiku → Sonnet 4: kompleks analiz üçün çox daha güclü
-        model: 'claude-sonnet-4-20250514',
-        // ✅ 4000 → 8000: böyük BPMN-lər üçün cavab kəsilmir
+        model: 'claude-sonnet-4-6',
         max_tokens: 8000,
+        stream: true,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMsg }]
       })
     });
 
-    const txt = await response.text();
-    if (!response.ok) {
-      let msg = 'HTTP ' + response.status;
-      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
-      return res.status(500).json({ error: msg });
+    if (!anthropicRes.ok) {
+      const errTxt = await anthropicRes.text();
+      let errBody;
+      try { errBody = JSON.parse(errTxt); } catch { errBody = { raw: errTxt }; }
+      return res.status(500).json({
+        error: errBody?.error?.message || `HTTP ${anthropicRes.status}`,
+        details: errBody
+      });
     }
 
-    const data = JSON.parse(txt);
-    const raw = (data.content || []).filter(c => c.type === 'text').map(c => c.text).join('');
-    if (!raw.trim()) return res.status(500).json({ error: 'Bos cavab' });
+    // Stream-i oxu, text-i topla
+    let fullText = '';
+    const reader = anthropicRes.body.getReader();
+    const decoder = new TextDecoder();
 
-    const start = raw.indexOf('[');
-    const end = raw.lastIndexOf(']');
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (!line.startsWith('data: ')) continue;
+        const data = line.slice(6).trim();
+        if (data === '[DONE]') break;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+            fullText += parsed.delta.text;
+          }
+        } catch { /* keç */ }
+      }
+    }
+
+    if (!fullText.trim()) return res.status(500).json({ error: 'Bos cavab' });
+
+    const start = fullText.indexOf('[');
+    const end = fullText.lastIndexOf(']');
     if (start === -1 || end === -1) {
-      return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
+      return res.status(500).json({ error: 'JSON tapilmadi', raw: fullText.slice(0, 500) });
     }
 
-    let jsonStr = raw.slice(start, end + 1)
+    let jsonStr = fullText.slice(start, end + 1)
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
       .replace(/,(\s*[}\]])/g, '$1');
 
@@ -172,10 +185,10 @@ ${processedUml}`;
         try {
           items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']');
         } catch {
-          return res.status(500).json({ error: 'JSON parse xetasi' });
+          return res.status(500).json({ error: 'JSON parse xetasi', raw: jsonStr.slice(0, 500) });
         }
       } else {
-        return res.status(500).json({ error: 'JSON parse xetasi' });
+        return res.status(500).json({ error: 'JSON parse xetasi', raw: jsonStr.slice(0, 500) });
       }
     }
 
@@ -186,6 +199,7 @@ ${processedUml}`;
     return res.status(200).json({ items });
 
   } catch (err) {
+    console.error('Handler error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
