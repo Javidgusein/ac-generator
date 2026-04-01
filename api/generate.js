@@ -25,77 +25,97 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
+  // ─── BPMN PREPROCESSING ───────────────────────────────────────────────────
+  // Əvvəlki versiyada TextAnnotation-lar, flow adları (şərt mətni), gateway
+  // adları kəsilirdi. Bu məlumatlar AC üçün ən vacibdir — indi saxlanılır.
   let processedUml = uml;
-  if (uml.length > 8000) {
+  if (isBpmn && uml.length > 12000) {
     const lines = uml.split('\n');
     const keep = lines.filter(l => {
       const t = l.trim();
-      return (
-        t.includes('name=') || t.includes('id=') ||
-        t.match(/userTask|serviceTask|scriptTask|sendTask|receiveTask|manualTask|businessRuleTask/) ||
-        t.match(/startEvent|endEvent|intermediateCatch|intermediateThrow|boundaryEvent/) ||
-        t.match(/exclusiveGateway|parallelGateway|inclusiveGateway|eventBasedGateway|complexGateway/) ||
-        t.match(/sequenceFlow|messageFlow|subProcess|callActivity/) ||
-        t.match(/lane|Lane|participant|Participant|pool|Pool/) ||
-        t.match(/\|[^|]+\|/) ||
-        t.match(/^\s*(if|else|elseif|repeat|while|fork|split|:)/)
-      );
+      // Boş sətirləri at
+      if (!t) return false;
+      // DI/görsel koordinat bloklarını at (bunlar biznes mənası daşımır)
+      if (t.match(/BPMNEdge|BPMNShape|waypoint|Bounds|BPMNLabel/)) return false;
+      if (t.match(/dc:Bounds|di:waypoint|bpmndi:/)) return false;
+      // Qalan hər şeyi saxla: task adları, annotation mətnləri,
+      // gateway adları, flow adları (şərtlər), lane adları, event adları
+      return true;
     });
     processedUml = keep.join('\n');
-    if (processedUml.length > 8000) processedUml = processedUml.slice(0, 8000);
+    // Hələ də böyükdürsə, strukturu qoru amma DI hissəsini kəs
+    if (processedUml.length > 12000) {
+      const diIdx = processedUml.indexOf('<bpmndi:BPMNDiagram');
+      if (diIdx > 0) processedUml = processedUml.slice(0, diIdx) + '\n</bpmn:definitions>';
+    }
   }
+  // ─────────────────────────────────────────────────────────────────────────
 
-  const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda' : 'UML'} diaqramı veriləcək. Sənin vəzifən bu diaqramdakı HƏR TASK, GATEWAY və EVENT üçün REAL BİZNES TƏLƏBLƏRİ şəklində Acceptance Criteria yazmaqdir.
+  const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda XML' : 'UML'} diaqramı veriləcək.
 
-ƏN VACIB QAYDA:
-Sən diaqramı TƏRIF ETMİRSƏN. Sən diaqramdakı hər elementin arxasındakı BİZNES TƏLƏBLƏRİNİ yazırsan.
+SƏNİN VƏZİFƏN:
+Diaqramdakı HƏR TASK, HƏR GATEWAY, HƏR EVENT və HƏR ANNOTATION üçün heç birini buraxmadan REAL BİZNES TƏLƏBLƏRİ şəklində Acceptance Criteria yaz.
 
-YANLIŞIN nümunəsi - BU CÜR YAZMA:
+═══════════════════════════════════════════
+BPMN XML OXUMA QAYDASI (çox vacib):
+═══════════════════════════════════════════
+• <bpmn:textAnnotation> içindəki mətn State və tarixçə məlumatlarını verir — bunları mütləq müvafiq task-ın AC-sına əlavə et.
+• <bpmn:sequenceFlow name="..."> içindəki ad gateway şərtini bildirir — hər şərt ayrı AC meyarı olmalıdır.
+• <bpmn:lane name="..."> rolları bildirir — AC-da "Sistem" və ya "İstifadəçi [rol adı]" şəklində yaz.
+• <bpmn:boundaryEvent> — xəta/timeout emal ssenarisi kimi AC yaz.
+• <bpmn:eventBasedGateway> — istifadəçiyə təqdim olunan hər seçim (hər outgoing event) ayrı AC meyarı olmalıdır.
+• Hər exclusiveGateway üçün HƏR çıxış branch-ı (outgoing sequenceFlow) üçün ayrı ssenari yaz (Ssenari A, Ssenari B, ...).
+
+═══════════════════════════════════════════
+YAZMA QAYDALARI:
+═══════════════════════════════════════════
+❌ YAZMA (diaqram təsviri):
 - "Bu task növbəti taska keçid edir."
 - "Proses bu addımdan sonra davam edir."
-- "İstifadəçi formu doldurduqdan sonra növbəti addıma keçir."
-- "Sistem bu tapşırığı icra edir."
+- "Gateway şərti yoxlayır."
 
-DOĞRUNUN nümunəsi - BU CÜR YAZ:
-- "Sistem istifadəçi daxil etdiyi e-poçt ünvanının formatını yoxlamalı və düzgün format olmadıqda xəta mesajı göstərməlidir."
-- "Sistem uğursuz cəhdləri qeyd etməli və 5 ardıcıl uğursuz cəhddən sonra hesabı müvəqqəti bloklamalıdır."
-- "Sistem sifariş yalnız Draft statusunda olduqda redaktə edilməsinə icazə verməlidir."
-- "Sistem istifadəçi sessiyası 15 dəqiqə aktivlik olmadıqda avtomatik olaraq sona çatdırılmalıdır."
-- "Sistem məlumat bazasında saxlanılan bütün kritik əməliyyatları audit log-da qeyd etməlidir."
-- "Sistem sistem xətaları baş verdikdə istifadəçiyə ümumi xəta mesajı göstərməli, texniki detalları log faylında saxlamalıdır."
+✅ YAZ (biznes tələbi):
+- "Sistem seçilmiş şəxsin müvafiq əməliyyat üzrə səlahiyyətini LDAP/rol registrindən real vaxtda sorğulamalı, nəticəni 3 saniyə ərzində qaytarmalıdır."
+- "Sistem status 'Akt icazəyə göndərilib' olaraq yenilədikdə dəyişiklik vaxtı, istifadəçi ID-si və köhnə status dəyəri audit log-da qeyd edilməlidir."
+- "Sistem xəta baş verdikdə istifadəçiyə texniki detallar göstərməməli, ümumi xəta mesajı ilə yönləndirməlidir; xəta stack trace-i server tərəfli log-da saxlanılmalıdır."
+- "Sistem cari tarixi (Yoxlamanın bitdiyi tarix + 10 gün) ilə müqayisə etməli; cari tarix bu həddən böyükdürsə əməliyyat avtomatik deaktiv edilməlidir."
 
-HƏR ELEMENT ÜÇÜN DÜŞÜNMƏLİ OLDUĞUN SUALLAR:
-1. Bu task/qərar/hadisə REAL HƏYATDA nə deməkdir? Hansı biznes prosesini idarə edir?
-2. Bu elementin düzgün icra olunması üçün SİSTEM nə etməlidir?
-3. Hansı VALİDASİYA qaydaları tətbiq edilməlidir?
-4. Hansı MƏHDUDİYYƏTLƏR var? (status, icazə, limit, format)
-5. XƏTA halında sistem nə etməlidir?
-6. Gateway üçün: hər QƏRAR BRANCH-ı hansı biznes şərtinə əsaslanır?
+HƏR ELEMENT ÜÇÜN DÜŞÜN:
+1. Bu element real həyatda hansı biznes prosesini idarə edir?
+2. Validasiya qaydaları nələrdir? (format, status, limit, icazə)
+3. Xəta halında sistem nə etməlidir?
+4. Audit/tarixçə tələbi varmı? (annotation-da varsa mütləq yaz)
+5. Performans/vaxt tələbi varmı?
+6. Rol/səlahiyyət tələbi varmı?
 
-AC YAZMA FORMATI:
-- Hər cümlə "Sistem ..." və ya "İstifadəçi ..." ilə başlamalıdır
-- Cümlə konkret, ölçülə bilən, test edilə bilən olmalıdır
-- Biznes qaydaları, validasiyalar, məhdudiyyətlər əks olunmalıdır
-- Yalnız Azərbaycan dilində yaz
-
-ÇIXIŞ: Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
+═══════════════════════════════════════════
+ÇIXIŞ FORMATI:
+═══════════════════════════════════════════
+Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
 
   const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını analiz et.
 
-Hər task, gateway və event üçün REAL BİZNES TƏLƏBLƏRİ yaz — diaqramı təsvir etmə, sistemin NƏ etməli olduğunu yaz.
+TAPŞIRIQ:
+1. Diaqramdakı HƏR elementi (task, gateway, event, annotation) tap
+2. Hər biri üçün REAL BİZNES TƏLƏBLƏRİ yaz — diaqramı təsvir etmə
+3. TextAnnotation-larda State və tarixçə məlumatları varsa müvafiq task-ın AC-sına əlavə et
+4. Gateway-lərdə hər branch üçün ayrı ssenari yaz (Ssenari A, Ssenari B...)
+5. Boundary Event-lər üçün xəta emal ssenarisi yaz
+6. Heç bir elementi buraxma
 
 JSON FORMAT:
 [{
   "id": "AC-001",
-  "title": "elementin biznes funksiyasını əks etdirən başlıq",
+  "title": "Elementin biznes funksiyasını əks etdirən başlıq",
   "priority": "High|Medium|Low",
-  "element_type": "userTask|serviceTask|exclusiveGateway|parallelGateway|startEvent|endEvent|boundaryEvent|subprocess",
-  "diagram_element": "diaqramdakı elementin dəqiq adı",
+  "element_type": "userTask|serviceTask|scriptTask|sendTask|receiveTask|exclusiveGateway|parallelGateway|eventBasedGateway|startEvent|endEvent|intermediateEvent|boundaryEvent|annotation",
+  "diagram_element": "Diaqramdakı elementin dəqiq adı",
+  "lane": "Elementin aid olduğu lane/rol adı (varsa)",
   "acceptance_criteria": [
-    "Sistem [spesifik biznes tələbi və ya validasiya qaydası].",
-    "Sistem [məhdudiyyət və ya xəta halı üçün davranış].",
-    "Sistem [uğurlu ssenari üçün gözlənilən nəticə].",
-    "İstifadəçi [icazə verilən və ya qadağan olan əməliyyat]."
+    "Sistem [spesifik biznes tələbi — validasiya, məhdudiyyət, davranış].",
+    "Sistem [xəta halı üçün davranış].",
+    "Sistem [audit/tarixçə tələbi — annotation-dan gələn məlumat].",
+    "İstifadəçi [rol üzrə icazə verilən/qadağan əməliyyat]."
   ]
 }]
 
@@ -113,8 +133,10 @@ ${processedUml}`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 4000,
+        // ✅ Haiku → Sonnet 4: kompleks analiz üçün çox daha güclü
+        model: 'claude-sonnet-4-20250514',
+        // ✅ 4000 → 8000: böyük BPMN-lər üçün cavab kəsilmir
+        max_tokens: 8000,
         system: systemPrompt,
         messages: [{ role: 'user', content: userMsg }]
       })
@@ -133,7 +155,9 @@ ${processedUml}`;
 
     const start = raw.indexOf('[');
     const end = raw.lastIndexOf(']');
-    if (start === -1 || end === -1) return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
+    if (start === -1 || end === -1) {
+      return res.status(500).json({ error: 'JSON tapilmadi', raw: raw.slice(0, 200) });
+    }
 
     let jsonStr = raw.slice(start, end + 1)
       .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
@@ -145,7 +169,9 @@ ${processedUml}`;
     } catch {
       const lastComplete = jsonStr.lastIndexOf('},');
       if (lastComplete > 0) {
-        try { items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']'); } catch {
+        try {
+          items = JSON.parse(jsonStr.slice(0, lastComplete + 1) + ']');
+        } catch {
           return res.status(500).json({ error: 'JSON parse xetasi' });
         }
       } else {
@@ -153,7 +179,10 @@ ${processedUml}`;
       }
     }
 
-    if (!Array.isArray(items) || !items.length) return res.status(500).json({ error: 'Bos array' });
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(500).json({ error: 'Bos array' });
+    }
+
     return res.status(200).json({ items });
 
   } catch (err) {
