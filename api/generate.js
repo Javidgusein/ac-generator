@@ -74,9 +74,9 @@ Yalnız JSON array çıxar.`;
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-r1",
+        model: "deepseek/deepseek-r1:free",
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 300,
+        max_tokens: 8000,
         temperature: 0.1
       })
     });
