@@ -137,7 +137,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <span class="nav-icon">&#9670;</span>
       <div class="nav-texts"><span class="nav-label">AC Generator</span><span class="nav-sub-text">Diaqramdan AC çıxar</span></div>
     </a>
-    <a href="/test-cases" class="nav-item">
+    <a href="/tc" class="nav-item">
       
       <span class="nav-icon">&#129514;</span>
       <div class="nav-texts"><span class="nav-label">Test Case-lər</span><span class="nav-sub-text">AC-dan test case çıxar</span></div>
@@ -286,7 +286,7 @@ function runGenerate(){
   if(!fileContent)return;showState('loading');
   var dotCount=0,lmsgEl=document.getElementById('lmsg');
   var dotTimer=setInterval(function(){dotCount=(dotCount+1)%4;var d='';for(var i=0;i<=dotCount;i++)d+='.';lmsgEl.textContent='Analiz edilir'+d;},600);
-  fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uml:fileContent.split(String.fromCharCode(13)).join('').trim(),diagType:diagType,mode:currentMode})})
+  fetch('/api/generate-ac',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({uml:fileContent.split(String.fromCharCode(13)).join('').trim(),diagType:diagType,mode:currentMode})})
   .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
   .then(function(r){
     clearInterval(dotTimer);genbtn.disabled=false;
