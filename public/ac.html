@@ -155,7 +155,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .jira-err-item{padding:8px 12px;background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.15);border-radius:8px;font-size:11px;color:#ff8080}
 .group-methods{display:flex;flex-direction:column;gap:6px}
 .group-method{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:1px solid var(--border);cursor:pointer;transition:all .15s;background:var(--surface2);user-select:none}
-.group-method *{pointer-events:none}
+.group-method .gm-icon,.group-method .gm-texts,.group-method .gm-title,.group-method .gm-sub{pointer-events:none}
 .group-method:hover{border-color:rgba(120,100,255,0.3);background:rgba(120,100,255,0.05)}
 .group-method.active{border-color:var(--accent);background:rgba(120,100,255,0.1)}
 .gm-icon{font-size:18px;flex-shrink:0;width:24px;text-align:center}
@@ -406,15 +406,18 @@ var unassignedACs=[];
 function loadJiraFields(){JIRA_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)document.getElementById(k).value=v;});}
 function saveJiraFields(){JIRA_KEYS.forEach(function(k){localStorage.setItem(k,document.getElementById(k).value.trim());});}
 
-// Group method selection
-document.getElementById('jiraStep1').addEventListener('click',function(e){
-  var method=e.target.closest('.group-method');
-  if(!method)return;
-  document.querySelectorAll('.group-method').forEach(function(x){x.classList.remove('active');});
-  method.classList.add('active');
-  var radio=method.querySelector('input[type=radio]');
-  if(radio)radio.checked=true;
-});
+// Group method selection - direct listeners
+function initGroupMethodListeners(){
+  document.querySelectorAll('.group-method').forEach(function(el){
+    el.addEventListener('click',function(){
+      document.querySelectorAll('.group-method').forEach(function(x){x.classList.remove('active');});
+      el.classList.add('active');
+      var radio=el.querySelector('input[type=radio]');
+      if(radio)radio.checked=true;
+    });
+  });
+}
+initGroupMethodListeners();
 
 document.getElementById('jiraBtn').addEventListener('click',function(){
   loadJiraFields();
