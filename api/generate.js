@@ -76,7 +76,7 @@ Yalnız JSON array çıxar.`;
       body: JSON.stringify({
         model: "deepseek/deepseek-r1",
         messages: [{ role: "user", content: prompt }],
-        max_tokens: 8000,
+        max_tokens: 300,
         temperature: 0.1
       })
     });
