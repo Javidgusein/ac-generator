@@ -1,3 +1,29 @@
+// ─── Dil avtomatik aşkarlanması ───────────────────────────────────────────
+function detectLanguage(text) {
+  const az = (text.match(/[əƏ]/g) || []).length;
+  const ru = (text.match(/[а-яёА-ЯЁ]/g) || []).length;
+  const tr = (text.match(/İ/g) || []).length;
+  if (ru > 5) return 'ru';
+  if (az > 2) return 'az';
+  if (tr > 2) return 'tr';
+  return 'en';
+}
+
+// ─── Format avtomatik aşkarlanması ───────────────────────────────────────
+function detectFormat(text) {
+  if (text.includes('<?xml') || text.includes('bpmn:') || text.includes('<definitions')) return 'camunda-xml';
+  if (text.match(/@startuml|@enduml/)) return 'plantuml';
+  if (text.match(/^(graph|flowchart|sequenceDiagram|classDiagram|stateDiagram|erDiagram|gantt|pie)/m)) return 'mermaid';
+  return 'auto';
+}
+
+const LANG_LABELS = {
+  az: 'Azərbaycan',
+  en: 'English',
+  ru: 'Русский',
+  tr: 'Türkçe'
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -5,8 +31,15 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { uml, diagType, fmt } = req.body;
+  const { uml, diagType, mode } = req.body;
   if (!uml) return res.status(400).json({ error: 'Content is required' });
+
+  // Dil auto-detect
+  const detectedLang = detectLanguage(uml);
+  const langLabel = LANG_LABELS[detectedLang] || 'Azerbaijani';
+
+  // Format auto-detect
+  const fmt = detectFormat(uml);
 
   const diagLabel = {
     'use-case': 'Use Case Diagram',
@@ -24,30 +57,63 @@ export default async function handler(req, res) {
   }[fmt] || 'auto-detected';
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
+  const isDocument = mode === 'document';
 
-  // ─── BPMN PREPROCESSING ───────────────────────────────────────────────────
-  let processedUml = uml;
-  if (isBpmn && uml.length > 12000) {
+  // ─── BPMN Preprocessing ──────────────────────────────────────────────────
+  let processedContent = uml;
+  if (!isDocument && isBpmn && uml.length > 12000) {
     const lines = uml.split('\n');
-    const keep = lines.filter(l => {
+    processedContent = lines.filter(l => {
       const t = l.trim();
       if (!t) return false;
       if (t.match(/BPMNEdge|BPMNShape|waypoint|dc:Bounds|di:waypoint|bpmndi:/)) return false;
       return true;
-    });
-    processedUml = keep.join('\n');
-    if (processedUml.length > 12000) {
-      const diIdx = processedUml.indexOf('<bpmndi:BPMNDiagram');
-      if (diIdx > 0) processedUml = processedUml.slice(0, diIdx) + '\n</bpmn:definitions>';
+    }).join('\n');
+    if (processedContent.length > 12000) {
+      const diIdx = processedContent.indexOf('<bpmndi:BPMNDiagram');
+      if (diIdx > 0) processedContent = processedContent.slice(0, diIdx) + '\n</bpmn:definitions>';
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
-  const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda XML' : 'UML'} diaqramı veriləcək.
+  // ─── Sənəd Modu Promptu ──────────────────────────────────────────────────
+  let systemPrompt, userMsg;
 
-═══════════════════════════════════════════
+  if (isDocument) {
+    systemPrompt = `You are a senior IT Business Analyst with 10+ years of experience. You will be given a document (SRS, BRD, specification, or other business document). Your task is to extract Acceptance Criteria from the requirements described in the document.
+
+RULES:
+- Extract AC only from what is explicitly written in the document
+- Do not invent requirements not mentioned in the document
+- Each AC must be testable and specific
+- Write all output in ${langLabel} language
+- Group related requirements under meaningful titles
+- Output ONLY a raw JSON array. No markdown, no explanation. Start with [ end with ]`;
+
+    userMsg = `Analyze this business document and extract Acceptance Criteria for all requirements.
+
+JSON FORMAT:
+[{
+  "id": "AC-001",
+  "title": "Requirement group title in ${langLabel}",
+  "priority": "High|Medium|Low",
+  "element_type": "functional|non-functional|business-rule|constraint",
+  "diagram_element": "Section or requirement reference from document",
+  "lane": "",
+  "acceptance_criteria": [
+    "The system must [specific testable requirement]."
+  ]
+}]
+
+Write in ${langLabel}. Output JSON array only.
+
+Document content:
+${processedContent.slice(0, 15000)}`;
+
+  } else {
+    // ─── Diaqram Modu Promptu ───────────────────────────────────────────────
+    systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda XML' : 'UML'} diaqramı veriləcək.
+
 ƏN VACIB QAYDA — YALNIZ DİAQRAMDA OLANLAR
-═══════════════════════════════════════════
 Sən YALNIZ diaqramda açıq şəkildə yazılmış məlumatları əsas götürməlisən.
 Diaqramda yazılmayan heç bir şeyi uydurmaq QƏTI QADAĞANDIR.
 
@@ -56,51 +122,39 @@ QADAĞAN OLAN DAVRANIŞLAR:
 ❌ Diaqramda olmayan field uydurmaq ("nömrəsi, tarixi, məbləği, təsviri" kimi)
 ❌ Diaqramda olmayan geri qayıtma məntiqi uydurmaq
 ❌ Diaqramda olmayan vaxt məhdudiyyəti uydurmaq ("3 saniyə ərzində" kimi)
-❌ Diaqramda olmayan texniki detal uydurmaq ("LDAP", "audit log" — yalnız annotasiyada varsa yaz)
-❌ Ümumi "best practice" əlavə etmək — sənin vəzifən yalnız DİAQRAMI oxumaqdır
+❌ Diaqramda olmayan texniki detal uydurmaq
+❌ Ümumi "best practice" əlavə etmək
 
 DÜZGÜN DAVRANIŞLAR:
 ✅ Task adı → bu əməliyyatın biznes məqsədini yaz
 ✅ sequenceFlow name → gateway şərtini yaz (diaqramda yazılıb)
-✅ textAnnotation mətn → State və tarixçə dəyərini müvafiq task-ın AC-sına əlavə et (diaqramda yazılıb)
-✅ lane adı → kimin icra etdiyini yaz (diaqramda yazılıb)
-✅ boundaryEvent → xəta halının varlığını yaz, amma xəta detalını uydurmaq yoxdur
-✅ eventBasedGateway → hər outgoing event seçimini ayrı meyar kimi yaz (diaqramda yazılıb)
+✅ textAnnotation mətn → müvafiq task-ın AC-sına əlavə et
+✅ lane adı → kimin icra etdiyini yaz
+✅ boundaryEvent → xəta halının varlığını yaz, detal uydurmaq yoxdur
+✅ exclusiveGateway → hər branch ayrı ssenari olsun
 
-YOXLAMA SUALIN:
-Hər AC cümləsi yazmadan əvvəl özünə sor:
-"Bu məlumat diaqramın hansı elementindən gəlir?"
-Əgər konkret element göstərə bilmirsənsə — O CÜMLƏNİ YAZMA.
+BPMN XML OXUMA QAYDASI:
+• bpmn:textAnnotation — State məlumatları
+• bpmn:sequenceFlow name — gateway şərti
+• bpmn:lane name — rollar
+• bpmn:boundaryEvent — xəta/timeout var
+• bpmn:exclusiveGateway — hər outgoing flow ayrı ssenari
 
-═══════════════════════════════════════════
-BPMN XML OXUMA QAYDASI
-═══════════════════════════════════════════
-• <bpmn:textAnnotation> — State və tarixçə məlumatları buradadır, müvafiq task-a əlavə et
-• <bpmn:sequenceFlow name="..."> — gateway şərti buradadır, hər branch ayrı ssenari olmalıdır
-• <bpmn:lane name="..."> — rollar buradadır, "İstifadəçi [rol]" şəklində yaz
-• <bpmn:boundaryEvent> — xəta/timeout mövcuddur, emal axını var deməkdir
-• <bpmn:eventBasedGateway> — hər outgoing event istifadəçi seçimidir
-• <bpmn:exclusiveGateway> — hər outgoing flow ayrı ssenari (Ssenari A, Ssenari B...)
+ÇIXIŞ: Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.
+Bütün mətn ${langLabel} dilində yazılmalıdır.`;
 
-ÇIXIŞ FORMATI:
-Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
+    userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını analiz et.
 
-  const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını analiz et.
-
-TAPŞIRIQ:
-1. Diaqramdakı HƏR elementi tap: task, gateway, event, annotation
-2. Hər element üçün YALNIZ DİAQRAMDA OLAN məlumatları əsas götür
-3. textAnnotation-da State/tarixçə varsa — müvafiq task-ın AC-sına əlavə et
-4. sequenceFlow adları gateway şərtlərini verir — hər branch ayrı ssenari olsun
-5. Boundary Event varsa — xəta emal axınının mövcudluğunu yaz, detal uydurmaq yoxdur
-6. Heç bir elementi buraxma, heç bir şey uydurma
+Diaqramdakı HƏR elementi tap: task, gateway, event, annotation.
+Hər element üçün YALNIZ DİAQRAMDA OLAN məlumatları əsas götür.
+Heç bir elementi buraxma, heç bir şey uydurma.
 
 JSON FORMAT:
 [{
   "id": "AC-001",
   "title": "Elementin biznes funksiyasını əks etdirən başlıq",
   "priority": "High|Medium|Low",
-  "element_type": "userTask|serviceTask|scriptTask|sendTask|receiveTask|exclusiveGateway|parallelGateway|eventBasedGateway|startEvent|endEvent|intermediateEvent|boundaryEvent|annotation",
+  "element_type": "userTask|serviceTask|scriptTask|exclusiveGateway|parallelGateway|eventBasedGateway|startEvent|endEvent|boundaryEvent|annotation",
   "diagram_element": "Diaqramdakı elementin dəqiq adı",
   "lane": "Elementin aid olduğu lane/rol adı (varsa)",
   "acceptance_criteria": [
@@ -108,12 +162,11 @@ JSON FORMAT:
   ]
 }]
 
-Xatırla: Hər AC cümləsinin mənbəyi diaqramın konkret bir elementindən gəlməlidir.
-
-Azərbaycan dilində yaz. Yalnız JSON array çıxar.
+${langLabel} dilində yaz. Yalnız JSON array çıxar.
 
 Diaqram:
-${processedUml}`;
+${processedContent}`;
+  }
 
   try {
     const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
@@ -142,11 +195,9 @@ ${processedUml}`;
       });
     }
 
-    // Stream-i oxu, text-i topla
     let fullText = '';
     const reader = anthropicRes.body.getReader();
     const decoder = new TextDecoder();
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -196,10 +247,9 @@ ${processedUml}`;
       return res.status(500).json({ error: 'Bos array' });
     }
 
-    return res.status(200).json({ items });
+    return res.status(200).json({ items, detectedLang });
 
   } catch (err) {
-    console.error('Handler error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
