@@ -67,7 +67,7 @@ Yalnız JSON array çıxar.`;
     const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY undefined' });
 
-    const response = await fetch('https://openrouter.ai/v1/chat/completions', {
+    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
