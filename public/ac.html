@@ -324,30 +324,27 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div class="modal-field">
         <label class="modal-label">Qruplaşdırma üsulu</label>
         <div class="group-methods">
-          <label class="group-method active" data-method="lane">
+          <div class="group-method active" data-method="lane">
             <span class="gm-icon">&#127968;</span>
-            <span class="gm-texts">
+            <div class="gm-texts">
               <span class="gm-title">Lane / Rol-a görə</span>
               <span class="gm-sub">Hər rol ayrı User Story olur</span>
-            </span>
-            <input type="radio" name="groupMethod" value="lane" checked style="display:none"/>
-          </label>
-          <label class="group-method" data-method="ai">
+            </div>
+          </div>
+          <div class="group-method" data-method="ai">
             <span class="gm-icon">&#129504;</span>
-            <span class="gm-texts">
+            <div class="gm-texts">
               <span class="gm-title">AI qruplaşdırsın</span>
               <span class="gm-sub">Oxşar AC-ları avtomatik birləşdirir</span>
-            </span>
-            <input type="radio" name="groupMethod" value="ai" style="display:none"/>
-          </label>
-          <label class="group-method" data-method="manual">
+            </div>
+          </div>
+          <div class="group-method" data-method="manual">
             <span class="gm-icon">&#9998;</span>
-            <span class="gm-texts">
+            <div class="gm-texts">
               <span class="gm-title">Manuel qruplaşdır</span>
               <span class="gm-sub">AC-ları özünüz qruplara bölün</span>
-            </span>
-            <input type="radio" name="groupMethod" value="manual" style="display:none"/>
-          </label>
+            </div>
+          </div>
         </div>
       </div>
       <div class="jira-results" id="jiraResults" style="display:none"></div>
@@ -412,8 +409,6 @@ function initGroupMethodListeners(){
     el.addEventListener('click',function(){
       document.querySelectorAll('.group-method').forEach(function(x){x.classList.remove('active');});
       el.classList.add('active');
-      var radio=el.querySelector('input[type=radio]');
-      if(radio)radio.checked=true;
     });
   });
 }
@@ -443,7 +438,7 @@ document.getElementById('jiraNext').addEventListener('click',function(){
   var proj=document.getElementById('jiraProject').value.trim();
   if(!domain||!email||!token||!proj){showToast('Bütün sahələri doldurun');return;}
   saveJiraFields();
-  var method=document.querySelector('input[name=groupMethod]:checked').value;
+  var active=document.querySelector('.group-method.active');var method=active?active.dataset.method:'lane';
   if(method==='manual'){
     initManualGroups();
     document.getElementById('jiraStep1').style.display='none';
