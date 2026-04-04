@@ -146,6 +146,32 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .jira-result-link{color:var(--accent);font-size:10px;text-decoration:none;flex-shrink:0}
 .jira-result-link:hover{text-decoration:underline}
 .jira-err-item{padding:8px 12px;background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.15);border-radius:8px;font-size:11px;color:#ff8080}
+.group-methods{display:flex;flex-direction:column;gap:6px}
+.group-method{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:9px;border:1px solid var(--border);cursor:pointer;transition:all .15s;background:var(--surface2)}
+.group-method:hover{border-color:rgba(120,100,255,0.3);background:rgba(120,100,255,0.05)}
+.group-method.active{border-color:var(--accent);background:rgba(120,100,255,0.1)}
+.gm-icon{font-size:18px;flex-shrink:0;width:24px;text-align:center}
+.gm-texts{display:flex;flex-direction:column;flex:1}
+.gm-title{font-size:12px;font-weight:600;color:var(--text)}
+.gm-sub{font-size:10px;color:var(--muted)}
+.manual-group{background:var(--surface2);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.manual-group-head{padding:9px 12px;background:rgba(120,100,255,0.08);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px}
+.group-name-input{background:transparent;border:none;color:var(--text);font-size:12px;font-weight:600;outline:none;flex:1}
+.group-name-input::placeholder{color:var(--muted)}
+.del-group-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:0 2px}
+.del-group-btn:hover{color:var(--accent3)}
+.group-ac-list{padding:8px}
+.group-ac-item{display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:6px;font-size:11px;margin-bottom:3px;background:rgba(255,255,255,0.03)}
+.group-ac-id{font-size:9px;padding:1px 5px;background:rgba(0,212,170,0.12);color:var(--accent2);border-radius:3px;font-weight:600;flex-shrink:0}
+.group-ac-title{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.remove-ac-btn{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:12px;flex-shrink:0}
+.remove-ac-btn:hover{color:var(--accent3)}
+.unassigned-pool{background:rgba(255,185,0,0.05);border:1px dashed rgba(255,185,0,0.2);border-radius:9px;padding:8px}
+.unassigned-label{font-size:9px;color:#ffb900;text-transform:uppercase;letter-spacing:1px;font-weight:600;margin-bottom:6px}
+.unassigned-ac{display:flex;align-items:center;gap:6px;padding:5px 6px;border-radius:6px;font-size:11px;margin-bottom:3px}
+.assign-select{background:var(--surface2);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:10px;padding:2px 5px;cursor:pointer;margin-left:auto}
+.add-group-btn{width:100%;margin-top:6px;padding:8px;background:transparent;border:1px dashed rgba(120,100,255,0.3);border-radius:8px;color:var(--accent);font-size:11px;cursor:pointer;transition:all .15s}
+.add-group-btn:hover{background:rgba(120,100,255,0.07)}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
 </style>
@@ -260,32 +286,80 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </div>
 <div class="toast" id="toast"></div>
 
-<!-- Jira Settings Modal -->
+<!-- Jira Modal -->
 <div class="modal-overlay" id="jiraModal">
-  <div class="modal">
-    <div class="modal-title">&#128203; Jira İnteqrasiyası</div>
-    <div class="modal-sub">AC-lar lane-ə görə qruplaşdırılıb hər lane üçün ayrı User Story yaradılacaq.</div>
-    <div class="modal-field">
-      <label class="modal-label">Jira Domain</label>
-      <input class="modal-input" id="jiraDomain" placeholder="yourcompany.atlassian.net"/>
+  <div class="modal" style="width:500px;max-width:95vw">
+
+    <!-- Step 1: Credentials + Method -->
+    <div id="jiraStep1">
+      <div class="modal-title">&#128203; Jira İnteqrasiyası</div>
+      <div class="modal-sub">Məlumatları daxil edin və qruplaşdırma üsulunu seçin.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="modal-field">
+          <label class="modal-label">Jira Domain</label>
+          <input class="modal-input" id="jiraDomain" placeholder="company.atlassian.net"/>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Project Key</label>
+          <input class="modal-input" id="jiraProject" placeholder="PROJ"/>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Email</label>
+          <input class="modal-input" id="jiraEmail" placeholder="you@company.com" type="email"/>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">API Token</label>
+          <input class="modal-input" id="jiraToken" placeholder="ATATT3x..." type="password"/>
+        </div>
+      </div>
+      <div class="modal-field">
+        <label class="modal-label">Qruplaşdırma üsulu</label>
+        <div class="group-methods">
+          <label class="group-method active" data-method="lane">
+            <span class="gm-icon">&#127968;</span>
+            <span class="gm-texts">
+              <span class="gm-title">Lane / Rol-a görə</span>
+              <span class="gm-sub">Hər rol ayrı User Story olur</span>
+            </span>
+            <input type="radio" name="groupMethod" value="lane" checked style="display:none"/>
+          </label>
+          <label class="group-method" data-method="ai">
+            <span class="gm-icon">&#129504;</span>
+            <span class="gm-texts">
+              <span class="gm-title">AI qruplaşdırsın</span>
+              <span class="gm-sub">Oxşar AC-ları avtomatik birləşdirir</span>
+            </span>
+            <input type="radio" name="groupMethod" value="ai" style="display:none"/>
+          </label>
+          <label class="group-method" data-method="manual">
+            <span class="gm-icon">&#9998;</span>
+            <span class="gm-texts">
+              <span class="gm-title">Manuel qruplaşdır</span>
+              <span class="gm-sub">AC-ları özünüz qruplara bölün</span>
+            </span>
+            <input type="radio" name="groupMethod" value="manual" style="display:none"/>
+          </label>
+        </div>
+      </div>
+      <div class="jira-results" id="jiraResults" style="display:none"></div>
+      <div class="modal-btns">
+        <button class="modal-cancel" id="jiraCancel">Ləğv et</button>
+        <button class="modal-save" id="jiraNext">Davam et &#8594;</button>
+      </div>
     </div>
-    <div class="modal-field">
-      <label class="modal-label">Email</label>
-      <input class="modal-input" id="jiraEmail" placeholder="you@company.com" type="email"/>
+
+    <!-- Step 2: Manuel grouping -->
+    <div id="jiraStep2" style="display:none">
+      <div class="modal-title">&#9998; AC-ları qruplara bölün</div>
+      <div class="modal-sub">Hər qrup Jira-da ayrı User Story olacaq.</div>
+      <div id="manualGroups" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding-right:4px"></div>
+      <button class="add-group-btn" id="addGroupBtn">+ Yeni qrup əlavə et</button>
+      <div class="modal-btns" style="margin-top:8px">
+        <button class="modal-cancel" id="jiraBack">&#8592; Geri</button>
+        <button class="modal-save" id="jiraSend">&#128203; Story-lər yarat</button>
+      </div>
     </div>
-    <div class="modal-field">
-      <label class="modal-label">API Token</label>
-      <input class="modal-input" id="jiraToken" placeholder="ATATT3x..." type="password"/>
-    </div>
-    <div class="modal-field">
-      <label class="modal-label">Project Key</label>
-      <input class="modal-input" id="jiraProject" placeholder="PROJ"/>
-    </div>
-    <div class="jira-results" id="jiraResults" style="display:none"></div>
-    <div class="modal-btns">
-      <button class="modal-cancel" id="jiraCancel">Ləğv et</button>
-      <button class="modal-save" id="jiraSend">&#128203; Story-lər yarat</button>
-    </div>
+
   </div>
 </div>
 <script>
@@ -318,70 +392,175 @@ dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.borderCol
 dz.addEventListener('dragleave',function(){dz.style.borderColor='';});
 dz.addEventListener('drop',function(e){e.preventDefault();dz.style.borderColor='';if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);});
 function clearFile(){fileContent='';fi.value='';finfo.classList.remove('show');langDetect.classList.remove('show');genbtn.disabled=true;// ─── Jira Integration ────────────────────────────────────────────────────
-var JIRA_KEYS = ['jiraDomain','jiraEmail','jiraToken','jiraProject'];
-function loadJiraFields(){
-  JIRA_KEYS.forEach(function(k){
-    var v=localStorage.getItem(k);
-    if(v) document.getElementById(k).value=v;
+var JIRA_KEYS=['jiraDomain','jiraEmail','jiraToken','jiraProject'];
+var manualGroups=[];
+var unassignedACs=[];
+
+function loadJiraFields(){JIRA_KEYS.forEach(function(k){var v=localStorage.getItem(k);if(v)document.getElementById(k).value=v;});}
+function saveJiraFields(){JIRA_KEYS.forEach(function(k){localStorage.setItem(k,document.getElementById(k).value.trim());});}
+
+// Group method selection
+document.querySelectorAll('.group-method').forEach(function(el){
+  el.addEventListener('click',function(){
+    document.querySelectorAll('.group-method').forEach(function(x){x.classList.remove('active');});
+    el.classList.add('active');
+    el.querySelector('input[type=radio]').checked=true;
   });
-}
-function saveJiraFields(){
-  JIRA_KEYS.forEach(function(k){
-    localStorage.setItem(k, document.getElementById(k).value.trim());
-  });
-}
+});
 
 document.getElementById('jiraBtn').addEventListener('click',function(){
   loadJiraFields();
   document.getElementById('jiraResults').style.display='none';
   document.getElementById('jiraResults').innerHTML='';
+  document.getElementById('jiraStep1').style.display='';
+  document.getElementById('jiraStep2').style.display='none';
   document.getElementById('jiraModal').classList.add('show');
 });
-document.getElementById('jiraCancel').addEventListener('click',function(){
-  document.getElementById('jiraModal').classList.remove('show');
-});
-document.getElementById('jiraModal').addEventListener('click',function(e){
-  if(e.target===this) this.classList.remove('show');
+document.getElementById('jiraCancel').addEventListener('click',function(){document.getElementById('jiraModal').classList.remove('show');});
+document.getElementById('jiraModal').addEventListener('click',function(e){if(e.target===this)this.classList.remove('show');});
+document.getElementById('jiraBack').addEventListener('click',function(){
+  document.getElementById('jiraStep2').style.display='none';
+  document.getElementById('jiraStep1').style.display='';
 });
 
-document.getElementById('jiraSend').addEventListener('click',function(){
+document.getElementById('jiraNext').addEventListener('click',function(){
   var domain=document.getElementById('jiraDomain').value.trim();
   var email=document.getElementById('jiraEmail').value.trim();
   var token=document.getElementById('jiraToken').value.trim();
   var proj=document.getElementById('jiraProject').value.trim();
-  if(!domain||!email||!token||!proj){
-    showToast('Bütün sahələri doldurun');return;
-  }
+  if(!domain||!email||!token||!proj){showToast('Bütün sahələri doldurun');return;}
   saveJiraFields();
-  var btn=document.getElementById('jiraSend');
+  var method=document.querySelector('input[name=groupMethod]:checked').value;
+  if(method==='manual'){
+    initManualGroups();
+    document.getElementById('jiraStep1').style.display='none';
+    document.getElementById('jiraStep2').style.display='';
+  } else {
+    sendToJira(method,[]);
+  }
+});
+
+// Manual grouping
+function initManualGroups(){
+  manualGroups=[{id:Date.now(),name:'Qrup 1',items:[]}];
+  unassignedACs=allItems.map(function(x){return x;});
+  renderManualGroups();
+}
+
+function renderManualGroups(){
+  var el=document.getElementById('manualGroups');el.innerHTML='';
+  manualGroups.forEach(function(g){
+    var div=document.createElement('div');div.className='manual-group';
+    var head=document.createElement('div');head.className='manual-group-head';
+    var inp=document.createElement('input');inp.className='group-name-input';inp.value=g.name;inp.placeholder='Qrup adı';
+    inp.addEventListener('change',function(){renameGroup(g.id,this.value);});
+    var delBtn=document.createElement('button');delBtn.className='del-group-btn';delBtn.innerHTML='&#128465;';
+    delBtn.addEventListener('click',function(){deleteGroup(g.id);});
+    head.appendChild(inp);head.appendChild(delBtn);div.appendChild(head);
+    var list=document.createElement('div');list.className='group-ac-list';
+    g.items.forEach(function(ac){
+      var row=document.createElement('div');row.className='group-ac-item';
+      var idSpan=document.createElement('span');idSpan.className='group-ac-id';idSpan.textContent=ac.id;
+      var titleSpan=document.createElement('span');titleSpan.className='group-ac-title';titleSpan.textContent=ac.title;
+      var rmBtn=document.createElement('button');rmBtn.className='remove-ac-btn';rmBtn.innerHTML='&#10005;';
+      rmBtn.addEventListener('click',function(){removeFromGroup(g.id,ac.id);});
+      row.appendChild(idSpan);row.appendChild(titleSpan);row.appendChild(rmBtn);
+      list.appendChild(row);
+    });
+    div.appendChild(list);el.appendChild(div);
+  });
+  if(unassignedACs.length){
+    var pool=document.createElement('div');pool.className='unassigned-pool';
+    var lbl=document.createElement('div');lbl.className='unassigned-label';lbl.textContent='Qrupa əlavə edilməyənlər ('+unassignedACs.length+')';
+    pool.appendChild(lbl);
+    unassignedACs.forEach(function(ac){
+      var row=document.createElement('div');row.className='unassigned-ac';
+      var idSpan=document.createElement('span');idSpan.className='group-ac-id';idSpan.textContent=ac.id;
+      var titleSpan=document.createElement('span');titleSpan.className='group-ac-title';titleSpan.style.flex='1';titleSpan.textContent=ac.title;
+      var sel=document.createElement('select');sel.className='assign-select';
+      var defOpt=document.createElement('option');defOpt.value='';defOpt.textContent='Qrup seç...';sel.appendChild(defOpt);
+      manualGroups.forEach(function(g){var opt=document.createElement('option');opt.value=g.id;opt.textContent=g.name;sel.appendChild(opt);});
+      sel.addEventListener('change',function(){if(this.value)assignToGroup(this.value,ac.id);});
+      row.appendChild(idSpan);row.appendChild(titleSpan);row.appendChild(sel);
+      pool.appendChild(row);
+    });
+    el.appendChild(pool);
+  }
+}
+function renameGroup(id,name){manualGroups.forEach(function(g){if(g.id===id)g.name=name;});}
+function deleteGroup(id){
+  var g=manualGroups.find(function(x){return x.id===id;});
+  if(g){unassignedACs=unassignedACs.concat(g.items);}
+  manualGroups=manualGroups.filter(function(x){return x.id!==id;});
+  renderManualGroups();
+}
+function removeFromGroup(gid,acId){
+  gid=parseInt(gid);
+  var g=manualGroups.find(function(x){return x.id===gid;});
+  if(g){var ac=g.items.find(function(x){return x.id===acId;});if(ac){g.items=g.items.filter(function(x){return x.id!==acId;});unassignedACs.push(ac);}}
+  renderManualGroups();
+}
+function assignToGroup(gid,acId){
+  if(!gid)return;
+  gid=parseInt(gid);
+  var ac=unassignedACs.find(function(x){return x.id===acId;});
+  var g=manualGroups.find(function(x){return x.id===gid;});
+  if(ac&&g){g.items.push(ac);unassignedACs=unassignedACs.filter(function(x){return x.id!==acId;});}
+  renderManualGroups();
+}
+
+document.getElementById('addGroupBtn').addEventListener('click',function(){
+  manualGroups.push({id:Date.now(),name:'Qrup '+(manualGroups.length+1),items:[]});
+  renderManualGroups();
+});
+
+document.getElementById('jiraSend').addEventListener('click',function(){
+  var groups=manualGroups.filter(function(g){return g.items.length>0;}).map(function(g){return{name:g.name,items:g.items};});
+  if(!groups.length){showToast('Ən azı bir qrupa AC əlavə edin');return;}
+  sendToJira('manual',groups);
+});
+
+function sendToJira(method,groups){
+  var btn=document.getElementById(method==='manual'?'jiraSend':'jiraNext');
   btn.textContent='Göndərilir...';btn.disabled=true;
+  var resEl=document.getElementById('jiraResults');
+  resEl.style.display='none';resEl.innerHTML='';
+
   fetch('/api/jira-push',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({items:allItems,jiraDomain:domain,jiraEmail:email,jiraToken:token,projectKey:proj})
+    body:JSON.stringify({
+      items:allItems,
+      groups:groups,
+      groupingMethod:method,
+      jiraDomain:document.getElementById('jiraDomain').value.trim(),
+      jiraEmail:document.getElementById('jiraEmail').value.trim(),
+      jiraToken:document.getElementById('jiraToken').value.trim(),
+      projectKey:document.getElementById('jiraProject').value.trim()
+    })
   })
   .then(function(r){return r.json();})
   .then(function(d){
-    btn.textContent='&#128203; Story-lər yarat';btn.disabled=false;
-    var el=document.getElementById('jiraResults');
-    el.style.display='flex';el.innerHTML='';
+    btn.textContent=method==='manual'?'&#128203; Story-lər yarat':'Davam et &#8594;';
+    btn.disabled=false;
+    document.getElementById('jiraStep1').style.display='';
+    document.getElementById('jiraStep2').style.display='none';
+    resEl.style.display='flex';
     if(d.created&&d.created.length){
       d.created.forEach(function(c){
-        el.innerHTML+='<div class="jira-result-item"><span class="jira-result-key">'+esc(c.issueKey)+'</span><span class="jira-result-lane">'+esc(c.lane)+' ('+c.count+' AC)</span><a class="jira-result-link" href="'+esc(c.url)+'" target="_blank">Aç &#8599;</a></div>';
+        resEl.innerHTML+='<div class="jira-result-item"><span class="jira-result-key">'+esc(c.issueKey)+'</span><span class="jira-result-lane">'+esc(c.lane)+' ('+c.count+' AC)</span><a class="jira-result-link" href="'+esc(c.url)+'" target="_blank">Aç &#8599;</a></div>';
       });
     }
     if(d.errors&&d.errors.length){
-      d.errors.forEach(function(e){
-        el.innerHTML+='<div class="jira-err-item">&#9888; '+esc(e.lane)+': '+esc(String(e.error))+'</div>';
-      });
+      d.errors.forEach(function(e){resEl.innerHTML+='<div class="jira-err-item">&#9888; '+esc(e.lane)+': '+esc(String(e.error))+'</div>';});
     }
   })
   .catch(function(err){
-    btn.textContent='&#128203; Story-lər yarat';btn.disabled=false;
+    btn.textContent=method==='manual'?'&#128203; Story-lər yarat':'Davam et &#8594;';
+    btn.disabled=false;
     showToast('Xeta: '+err.message);
   });
-});
-
+}
 showState('empty');}
 function readFile(file){
   var r=new FileReader();
