@@ -25,7 +25,6 @@ export default async function handler(req, res) {
 
   const isBpmn = diagType === 'bpmn' || fmt === 'camunda-xml';
 
-  // ─── BPMN PREPROCESSING ───────────────────────────────────────────────────
   let processedUml = uml;
   if (isBpmn && uml.length > 12000) {
     const lines = uml.split('\n');
@@ -41,58 +40,45 @@ export default async function handler(req, res) {
       if (diIdx > 0) processedUml = processedUml.slice(0, diIdx) + '\n</bpmn:definitions>';
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
   const systemPrompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda XML' : 'UML'} diaqramı veriləcək.
 
-═══════════════════════════════════════════
 ƏN VACIB QAYDA — YALNIZ DİAQRAMDA OLANLAR
-═══════════════════════════════════════════
 Sən YALNIZ diaqramda açıq şəkildə yazılmış məlumatları əsas götürməlisən.
 Diaqramda yazılmayan heç bir şeyi uydurmaq QƏTI QADAĞANDIR.
 
 QADAĞAN OLAN DAVRANIŞLAR:
-❌ Diaqramda olmayan limit uydurmaq ("maksimum 500 simvol", "3 cəhd" kimi)
-❌ Diaqramda olmayan field uydurmaq ("nömrəsi, tarixi, məbləği, təsviri" kimi)
-❌ Diaqramda olmayan geri qayıtma məntiqi uydurmaq
-❌ Diaqramda olmayan vaxt məhdudiyyəti uydurmaq ("3 saniyə ərzində" kimi)
-❌ Diaqramda olmayan texniki detal uydurmaq ("LDAP", "audit log" — yalnız annotasiyada varsa yaz)
-❌ Ümumi "best practice" əlavə etmək — sənin vəzifən yalnız DİAQRAMI oxumaqdır
+- Diaqramda olmayan limit uydurmaq ("maksimum 500 simvol", "3 cəhd" kimi)
+- Diaqramda olmayan field uydurmaq ("nömrəsi, tarixi, məbləği, təsviri" kimi)
+- Diaqramda olmayan geri qayıtma məntiqi uydurmaq
+- Diaqramda olmayan vaxt məhdudiyyəti uydurmaq ("3 saniyə ərzində" kimi)
+- Diaqramda olmayan texniki detal uydurmaq
+- Ümumi "best practice" əlavə etmək
 
 DÜZGÜN DAVRANIŞLAR:
-✅ Task adı → bu əməliyyatın biznes məqsədini yaz
-✅ sequenceFlow name → gateway şərtini yaz (diaqramda yazılıb)
-✅ textAnnotation mətn → State və tarixçə dəyərini müvafiq task-ın AC-sına əlavə et (diaqramda yazılıb)
-✅ lane adı → kimin icra etdiyini yaz (diaqramda yazılıb)
-✅ boundaryEvent → xəta halının varlığını yaz, amma xəta detalını uydurmaq yoxdur
-✅ eventBasedGateway → hər outgoing event seçimini ayrı meyar kimi yaz (diaqramda yazılıb)
+- Task adı: bu əməliyyatın biznes məqsədini yaz
+- sequenceFlow name: gateway şərtini yaz (diaqramda yazılıb)
+- textAnnotation mətn: müvafiq task-ın AC-sına əlavə et
+- lane adı: kimin icra etdiyini yaz
+- boundaryEvent: xəta halının varlığını yaz, detal uydurmaq yoxdur
+- eventBasedGateway: hər outgoing event seçimini ayrı meyar kimi yaz
 
-YOXLAMA SUALIN:
-Hər AC cümləsi yazmadan əvvəl özünə sor:
-"Bu məlumat diaqramın hansı elementindən gəlir?"
-Əgər konkret element göstərə bilmirsənsə — O CÜMLƏNİ YAZMA.
+BPMN XML OXUMA QAYDASI:
+- bpmn:textAnnotation — State məlumatları buradadır
+- bpmn:sequenceFlow name — gateway şərti buradadır
+- bpmn:lane name — rollar buradadır
+- bpmn:boundaryEvent — xəta/timeout var deməkdir
+- bpmn:exclusiveGateway — hər outgoing flow ayrı ssenari
 
-═══════════════════════════════════════════
-BPMN XML OXUMA QAYDASI
-═══════════════════════════════════════════
-• <bpmn:textAnnotation> — State və tarixçə məlumatları buradadır, müvafiq task-a əlavə et
-• <bpmn:sequenceFlow name="..."> — gateway şərti buradadır, hər branch ayrı ssenari olmalıdır
-• <bpmn:lane name="..."> — rollar buradadır, "İstifadəçi [rol]" şəklində yaz
-• <bpmn:boundaryEvent> — xəta/timeout mövcuddur, emal axını var deməkdir
-• <bpmn:eventBasedGateway> — hər outgoing event istifadəçi seçimidir
-• <bpmn:exclusiveGateway> — hər outgoing flow ayrı ssenari (Ssenari A, Ssenari B...)
-
-ÇIXIŞ FORMATI:
-Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
+ÇIXIŞ: Yalnız xam JSON array. Heç bir izahat, markdown, code fence yoxdur. [ ilə başla ] ilə bitir.`;
 
   const userMsg = `Bu ${diagLabel} (${fmtLabel}) diaqramını analiz et.
 
-TAPŞIRIQ:
 1. Diaqramdakı HƏR elementi tap: task, gateway, event, annotation
 2. Hər element üçün YALNIZ DİAQRAMDA OLAN məlumatları əsas götür
-3. textAnnotation-da State/tarixçə varsa — müvafiq task-ın AC-sına əlavə et
-4. sequenceFlow adları gateway şərtlərini verir — hər branch ayrı ssenari olsun
-5. Boundary Event varsa — xəta emal axınının mövcudluğunu yaz, detal uydurmaq yoxdur
+3. textAnnotation varsa müvafiq task-ın AC-sına əlavə et
+4. sequenceFlow adları gateway şərtlərini verir, hər branch ayrı ssenari olsun
+5. Boundary Event varsa xəta emal axınının mövcudluğunu yaz
 6. Heç bir elementi buraxma, heç bir şey uydurma
 
 JSON FORMAT:
@@ -100,7 +86,7 @@ JSON FORMAT:
   "id": "AC-001",
   "title": "Elementin biznes funksiyasını əks etdirən başlıq",
   "priority": "High|Medium|Low",
-  "element_type": "userTask|serviceTask|scriptTask|sendTask|receiveTask|exclusiveGateway|parallelGateway|eventBasedGateway|startEvent|endEvent|intermediateEvent|boundaryEvent|annotation",
+  "element_type": "userTask|serviceTask|scriptTask|exclusiveGateway|parallelGateway|eventBasedGateway|startEvent|endEvent|boundaryEvent|annotation",
   "diagram_element": "Diaqramdakı elementin dəqiq adı",
   "lane": "Elementin aid olduğu lane/rol adı (varsa)",
   "acceptance_criteria": [
@@ -108,62 +94,49 @@ JSON FORMAT:
   ]
 }]
 
-Xatırla: Hər AC cümləsinin mənbəyi diaqramın konkret bir elementindən gəlməlidir.
-
 Azərbaycan dilində yaz. Yalnız JSON array çıxar.
 
 Diaqram:
 ${processedUml}`;
 
   try {
-    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const apiRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': process.env.Claude_API_KEY,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'HTTP-Referer': 'https://ac-generator-blond.vercel.app',
+        'X-Title': 'AC Generator'
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'anthropic/claude-sonnet-4-5',
         max_tokens: 8000,
-        stream: true,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMsg }]
+        temperature: 0.1,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMsg }
+        ]
       })
     });
 
-    if (!anthropicRes.ok) {
-      const errTxt = await anthropicRes.text();
-      let errBody;
-      try { errBody = JSON.parse(errTxt); } catch { errBody = { raw: errTxt }; }
-      return res.status(500).json({
-        error: errBody?.error?.message || `HTTP ${anthropicRes.status}`,
-        details: errBody
-      });
+    const txt = await apiRes.text();
+
+    if (!txt || txt.trim().startsWith('<') || txt.trim().startsWith('A server')) {
+      return res.status(500).json({ error: 'Server xetasi: ' + txt.slice(0, 100) });
     }
 
-    // Stream-i oxu, text-i topla
-    let fullText = '';
-    const reader = anthropicRes.body.getReader();
-    const decoder = new TextDecoder();
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      for (const line of chunk.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') break;
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
-            fullText += parsed.delta.text;
-          }
-        } catch { /* keç */ }
-      }
+    if (!apiRes.ok) {
+      let msg = 'HTTP ' + apiRes.status;
+      try { msg = JSON.parse(txt).error?.message || msg; } catch {}
+      return res.status(500).json({ error: msg });
     }
 
+    let data;
+    try { data = JSON.parse(txt); } catch {
+      return res.status(500).json({ error: 'Response parse xetasi', raw: txt.slice(0, 200) });
+    }
+
+    const fullText = data?.choices?.[0]?.message?.content || '';
     if (!fullText.trim()) return res.status(500).json({ error: 'Bos cavab' });
 
     const start = fullText.indexOf('[');
@@ -199,7 +172,6 @@ ${processedUml}`;
     return res.status(200).json({ items });
 
   } catch (err) {
-    console.error('Handler error:', err);
     return res.status(500).json({ error: err.message });
   }
 }
