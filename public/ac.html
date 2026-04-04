@@ -159,6 +159,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .group-method:hover{border-color:rgba(120,100,255,0.3);background:rgba(120,100,255,0.05)}
 .group-method.active{border-color:var(--accent);background:rgba(120,100,255,0.1)}
 .gm-icon{font-size:18px;flex-shrink:0;width:24px;text-align:center}
+.field-hint{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5;display:block}
+.field-hint b{color:var(--text)}
+.field-link{color:var(--accent);text-decoration:none}
+.field-link:hover{text-decoration:underline}
 .gm-texts{display:flex;flex-direction:column;flex:1}
 .gm-title{font-size:12px;font-weight:600;color:var(--text)}
 .gm-sub{font-size:10px;color:var(--muted)}
@@ -306,22 +310,26 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
     <!-- Step 1: Credentials + Method -->
     <div id="jiraStep1" class="drawer-body">
       <div class="modal-sub">Məlumatları daxil edin və qruplaşdırma üsulunu seçin.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <div style="display:flex;flex-direction:column;gap:12px">
         <div class="modal-field">
           <label class="modal-label">Jira Domain</label>
-          <input class="modal-input" id="jiraDomain" placeholder="company.atlassian.net"/>
-        </div>
-        <div class="modal-field">
-          <label class="modal-label">Project Key</label>
-          <input class="modal-input" id="jiraProject" placeholder="PROJ"/>
+          <input class="modal-input" id="jiraDomain" placeholder="yourcompany.atlassian.net"/>
+          <span class="field-hint">Jira-ya daxil olduqda URL-dəki domain. Məs: <b>yourcompany.atlassian.net</b></span>
         </div>
         <div class="modal-field">
           <label class="modal-label">Email</label>
           <input class="modal-input" id="jiraEmail" placeholder="you@company.com" type="email"/>
+          <span class="field-hint">Jira hesabınıza daxil olduğunuz email ünvanı.</span>
         </div>
         <div class="modal-field">
           <label class="modal-label">API Token</label>
           <input class="modal-input" id="jiraToken" placeholder="ATATT3x..." type="password"/>
+          <span class="field-hint">Atlassian hesabınızdan yaradılan token. <a class="field-link" href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank">Buradan yaradın &#8599;</a></span>
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Project Key</label>
+          <input class="modal-input" id="jiraProject" placeholder="PROJ"/>
+          <span class="field-hint">Jira issue nömrəsinin əvvəlindəki kod. Məs: <b>PROJ</b>-123 → Key: <b>PROJ</b></span>
         </div>
       </div>
       <div class="modal-field">
