@@ -1,11 +1,15 @@
 {
   "version": 2,
   "builds": [
-    { "src": "api/generate.js", "use": "@vercel/node" },
+    { "src": "api/generate-ac.js", "use": "@vercel/node" },
+    { "src": "api/generate-tc.js", "use": "@vercel/node" },
     { "src": "public/**", "use": "@vercel/static" }
   ],
   "routes": [
-    { "src": "/api/generate", "dest": "/api/generate.js" },
+    { "src": "/api/generate-ac", "dest": "/api/generate-ac.js" },
+    { "src": "/api/generate-tc", "dest": "/api/generate-tc.js" },
+    { "src": "/tc", "dest": "/public/tc.html" },
+    { "src": "/", "dest": "/public/ac.html" },
     { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }
