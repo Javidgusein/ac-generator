@@ -41,7 +41,14 @@ export default async function handler(req, res) {
   }
 
   const prompt = `Sən 10+ il təcrübəli senior IT Business Analyst-sən. Sənə ${isBpmn ? 'BPMN/Camunda XML' : 'UML'} diaqramı veriləcək.
-...
+
+ƏN VACIB QAYDA — YALNIZ DİAQRAMDA OLANLAR
+Sən YALNIZ diaqramda açıq şəkildə yazılmış məlumatları əsas götürməlisən.
+Heç bir şeyi uydurma.
+
+Diaqram:
+${processedUml}
+
 JSON FORMAT:
 [{
   "id": "AC-001",
@@ -54,12 +61,12 @@ JSON FORMAT:
     "Sistem/İstifadəçi [YALNIZ DİAQRAMDA OLAN məlumata əsaslanan tələb]."
   ]
 }]
-Azərbaycan dilində yaz. Yalnız JSON array çıxar.
-Diaqram:
-${processedUml}`;
+Yalnız JSON array çıxar.`;
 
   try {
     const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: 'OPENROUTER_API_KEY undefined' });
+
     const response = await fetch('https://openrouter.ai/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -73,6 +80,12 @@ ${processedUml}`;
         temperature: 0.1
       })
     });
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType?.includes('application/json')) {
+      const txt = await response.text();
+      return res.status(500).json({ error: 'JSON deyil, HTML gəldi', raw: txt.slice(0, 500) });
+    }
 
     if (!response.ok) {
       const txt = await response.text();
@@ -99,6 +112,10 @@ ${processedUml}`;
       } else {
         return res.status(500).json({ error: 'JSON parse xetasi', raw: jsonStr.slice(0, 500) });
       }
+    }
+
+    if (!Array.isArray(items) || !items.length) {
+      return res.status(500).json({ error: 'Bos array' });
     }
 
     return res.status(200).json({ items });
