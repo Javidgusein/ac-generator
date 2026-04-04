@@ -121,9 +121,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .info-box strong{color:var(--text);display:block;margin-bottom:4px;font-size:11px}
 .toast{position:fixed;bottom:18px;right:18px;background:var(--surface);border:1px solid rgba(120,100,255,.3);border-radius:8px;padding:8px 14px;font-size:11px;color:var(--accent2);transform:translateY(44px);opacity:0;transition:all .22s;z-index:999}
 .toast.show{transform:translateY(0);opacity:1}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
-.modal-overlay.show{display:flex}
-.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;width:460px;max-width:94vw;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column;gap:14px}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:200;backdrop-filter:blur(3px)}
+.modal-overlay.show{display:block}
+.modal{background:var(--surface);border-left:1px solid var(--border);padding:0;width:480px;max-width:95vw;height:100vh;position:fixed;top:0;right:-500px;display:flex;flex-direction:column;transition:right .3s cubic-bezier(.4,0,.2,1);z-index:201;box-shadow:-8px 0 32px rgba(0,0,0,0.4)}
+.modal-overlay.show .modal{right:0}
+.drawer-header{padding:20px 24px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-shrink:0}
+.drawer-title{font-size:15px;font-weight:700;flex:1}
+.drawer-close{background:transparent;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:2px 6px;border-radius:6px;transition:all .15s}
+.drawer-close:hover{color:var(--text);background:rgba(255,255,255,0.06)}
+.drawer-body{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+.drawer-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0}
 .modal-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
 .modal-sub{font-size:11px;color:var(--muted);margin-top:-10px;line-height:1.6}
 .modal-field{display:flex;flex-direction:column;gap:5px}
@@ -287,13 +294,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 </div>
 <div class="toast" id="toast"></div>
 
-<!-- Jira Modal -->
+<!-- Jira Drawer -->
 <div class="modal-overlay" id="jiraModal">
-  <div class="modal" style="width:500px;max-width:95vw">
+  <div class="modal">
+    <div class="drawer-header">
+      <span style="font-size:18px">&#128203;</span>
+      <span class="drawer-title">Jira İnteqrasiyası</span>
+      <button class="drawer-close" id="jiraClose">&#10005;</button>
+    </div>
 
     <!-- Step 1: Credentials + Method -->
-    <div id="jiraStep1">
-      <div class="modal-title">&#128203; Jira İnteqrasiyası</div>
+    <div id="jiraStep1" class="drawer-body">
       <div class="modal-sub">Məlumatları daxil edin və qruplaşdırma üsulunu seçin.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div class="modal-field">
@@ -343,22 +354,20 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
         </div>
       </div>
       <div class="jira-results" id="jiraResults" style="display:none"></div>
-      <div class="modal-btns">
-        <button class="modal-cancel" id="jiraCancel">Ləğv et</button>
-        <button class="modal-save" id="jiraNext">Davam et &#8594;</button>
-      </div>
+    </div>
+    <div class="drawer-footer" id="step1Footer">
+      <button class="modal-save" id="jiraNext">Davam et &#8594;</button>
     </div>
 
     <!-- Step 2: Manuel grouping -->
-    <div id="jiraStep2" style="display:none">
-      <div class="modal-title">&#9998; AC-ları qruplara bölün</div>
-      <div class="modal-sub">Hər qrup Jira-da ayrı User Story olacaq.</div>
-      <div id="manualGroups" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto;padding-right:4px"></div>
+    <div id="jiraStep2" class="drawer-body" style="display:none">
+      <div class="modal-sub" style="margin-bottom:4px">Hər qrup Jira-da ayrı User Story olacaq.</div>
+      <div id="manualGroups" style="display:flex;flex-direction:column;gap:8px"></div>
       <button class="add-group-btn" id="addGroupBtn">+ Yeni qrup əlavə et</button>
-      <div class="modal-btns" style="margin-top:8px">
-        <button class="modal-cancel" id="jiraBack">&#8592; Geri</button>
-        <button class="modal-save" id="jiraSend">&#128203; Story-lər yarat</button>
-      </div>
+    </div>
+    <div class="drawer-footer" id="step2Footer" style="display:none">
+      <button class="modal-cancel" id="jiraBack">&#8592; Geri</button>
+      <button class="modal-save" id="jiraSend">&#128203; Story-lər yarat</button>
     </div>
 
   </div>
@@ -418,11 +427,13 @@ document.getElementById('jiraBtn').addEventListener('click',function(){
   document.getElementById('jiraStep2').style.display='none';
   document.getElementById('jiraModal').classList.add('show');
 });
-document.getElementById('jiraCancel').addEventListener('click',function(){document.getElementById('jiraModal').classList.remove('show');});
+document.getElementById('jiraClose').addEventListener('click',function(){document.getElementById('jiraModal').classList.remove('show');});
 document.getElementById('jiraModal').addEventListener('click',function(e){if(e.target===this)this.classList.remove('show');});
 document.getElementById('jiraBack').addEventListener('click',function(){
   document.getElementById('jiraStep2').style.display='none';
+  document.getElementById('step2Footer').style.display='none';
   document.getElementById('jiraStep1').style.display='';
+  document.getElementById('step1Footer').style.display='flex';
 });
 
 document.getElementById('jiraNext').addEventListener('click',function(){
@@ -436,7 +447,9 @@ document.getElementById('jiraNext').addEventListener('click',function(){
   if(method==='manual'){
     initManualGroups();
     document.getElementById('jiraStep1').style.display='none';
+    document.getElementById('step1Footer').style.display='none';
     document.getElementById('jiraStep2').style.display='';
+    document.getElementById('step2Footer').style.display='flex';
   } else {
     sendToJira(method,[]);
   }
@@ -546,7 +559,9 @@ function sendToJira(method,groups){
     btn.textContent=method==='manual'?'&#128203; Story-lər yarat':'Davam et &#8594;';
     btn.disabled=false;
     document.getElementById('jiraStep1').style.display='';
+    document.getElementById('step1Footer').style.display='flex';
     document.getElementById('jiraStep2').style.display='none';
+    document.getElementById('step2Footer').style.display='none';
     resEl.style.display='flex';
     if(d.created&&d.created.length){
       d.created.forEach(function(c){
