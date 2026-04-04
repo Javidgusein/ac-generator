@@ -92,6 +92,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .aclist{list-style:none;display:flex;flex-direction:column;gap:8px}
 .aclist li{font-size:12px;line-height:1.7;padding-left:24px;position:relative;color:var(--text)}
 .acnum{position:absolute;left:0;color:var(--accent2);font-weight:700;font-size:11px}
+.ac-num-badge{font-size:9px;padding:2px 7px;background:rgba(0,212,170,0.12);color:var(--accent2);border-radius:4px;font-weight:600;flex-shrink:0;margin-right:2px}
 .card-foot{padding:8px 15px;border-top:1px solid var(--border);display:flex;justify-content:flex-end}
 .copybtn{padding:3px 9px;background:transparent;border:1px solid var(--border);border-radius:4px;color:var(--muted);font-size:10px;cursor:pointer;transition:all .15s}
 .copybtn:hover{color:var(--accent);border-color:var(--accent)}.copybtn.ok{color:var(--accent2);border-color:var(--accent2)}
@@ -302,7 +303,7 @@ function renderCards(items){
     var pc={High:'ph',Medium:'pm',Low:'pl'}[s.priority]||'pm';
     var ac=(s.acceptance_criteria||[]).map(function(a,idx){return '<li><span class="acnum">'+(idx+1)+'.</span>'+esc(a)+'</li>';}).join('');
     var div=document.createElement('div');div.className='card';div.style.animationDelay=(i*0.06)+'s';
-    div.innerHTML='<div class="card-head"><span class="actitle">'+esc(s.title||'')+'</span><span class="pbadge '+pc+'">'+esc(s.priority||'Medium')+'</span></div><div class="card-body"><ul class="aclist">'+ac+'</ul></div><div class="card-foot"><button class="copybtn" data-i="'+i+'">kopyala</button></div>';
+    div.innerHTML='<div class="card-head"><span class="ac-num-badge">AC-'+(String(i+1).padStart(3,'0'))+'</span><span class="actitle">'+esc(s.title||'')+'</span><span class="pbadge '+pc+'">'+esc(s.priority||'Medium')+'</span></div><div class="card-body"><ul class="aclist">'+ac+'</ul></div><div class="card-foot"><button class="copybtn" data-i="'+i+'">kopyala</button></div>';
     el.appendChild(div);
   });
   el.querySelectorAll('.copybtn').forEach(function(b){b.addEventListener('click',function(){navigator.clipboard.writeText(itemToText(allItems[+b.dataset.i]));b.textContent='OK';b.classList.add('ok');setTimeout(function(){b.textContent='kopyala';b.classList.remove('ok');},2000);});});
