@@ -121,6 +121,31 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
 .info-box strong{color:var(--text);display:block;margin-bottom:4px;font-size:11px}
 .toast{position:fixed;bottom:18px;right:18px;background:var(--surface);border:1px solid rgba(120,100,255,.3);border-radius:8px;padding:8px 14px;font-size:11px;color:var(--accent2);transform:translateY(44px);opacity:0;transition:all .22s;z-index:999}
 .toast.show{transform:translateY(0);opacity:1}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:24px;width:420px;max-width:90vw;display:flex;flex-direction:column;gap:16px}
+.modal-title{font-size:15px;font-weight:700;display:flex;align-items:center;gap:8px}
+.modal-sub{font-size:11px;color:var(--muted);margin-top:-10px;line-height:1.6}
+.modal-field{display:flex;flex-direction:column;gap:5px}
+.modal-label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:600}
+.modal-input{background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px;padding:9px 12px;outline:none;transition:border-color .15s;font-family:inherit}
+.modal-input:focus{border-color:var(--accent)}
+.modal-input::placeholder{color:var(--muted)}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:4px}
+.modal-cancel{padding:8px 16px;background:transparent;border:1px solid var(--border);border-radius:8px;color:var(--muted);font-size:12px;cursor:pointer;transition:all .15s}
+.modal-cancel:hover{color:var(--text);border-color:rgba(255,255,255,0.2)}
+.modal-save{padding:8px 16px;background:linear-gradient(135deg,var(--accent),#5a48e0);border:none;border-radius:8px;color:#fff;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+.modal-save:hover{opacity:.9}
+.jira-btn{background:rgba(38,132,255,0.1);border-color:rgba(38,132,255,0.3);color:#2684ff}
+.jira-btn:hover{background:rgba(38,132,255,0.18)}
+.jira-btn:disabled{opacity:.4;cursor:not-allowed}
+.jira-results{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.jira-result-item{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,212,170,0.06);border:1px solid rgba(0,212,170,0.15);border-radius:8px;font-size:11px}
+.jira-result-key{color:var(--accent2);font-weight:600;flex-shrink:0}
+.jira-result-lane{color:var(--muted);flex:1}
+.jira-result-link{color:var(--accent);font-size:10px;text-decoration:none;flex-shrink:0}
+.jira-result-link:hover{text-decoration:underline}
+.jira-err-item{padding:8px 12px;background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.15);border-radius:8px;font-size:11px;color:#ff8080}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
 </style>
@@ -226,6 +251,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <div class="toolbar" id="toolbar">
         <div class="tcount"><span id="cnt">0</span> AC bloku tapıldı</div>
         <button class="tbarbtn" id="copyAll">Hamısını kopyala</button>
+        <button class="tbarbtn jira-btn" id="jiraBtn">&#128203; Jira-ya göndər</button>
         <button class="tbarbtn exp" id="exportBtn">&#8595; Word export</button>
       </div>
       <div id="results"></div>
@@ -233,6 +259,35 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
   </div>
 </div>
 <div class="toast" id="toast"></div>
+
+<!-- Jira Settings Modal -->
+<div class="modal-overlay" id="jiraModal">
+  <div class="modal">
+    <div class="modal-title">&#128203; Jira İnteqrasiyası</div>
+    <div class="modal-sub">AC-lar lane-ə görə qruplaşdırılıb hər lane üçün ayrı User Story yaradılacaq.</div>
+    <div class="modal-field">
+      <label class="modal-label">Jira Domain</label>
+      <input class="modal-input" id="jiraDomain" placeholder="yourcompany.atlassian.net"/>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Email</label>
+      <input class="modal-input" id="jiraEmail" placeholder="you@company.com" type="email"/>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">API Token</label>
+      <input class="modal-input" id="jiraToken" placeholder="ATATT3x..." type="password"/>
+    </div>
+    <div class="modal-field">
+      <label class="modal-label">Project Key</label>
+      <input class="modal-input" id="jiraProject" placeholder="PROJ"/>
+    </div>
+    <div class="jira-results" id="jiraResults" style="display:none"></div>
+    <div class="modal-btns">
+      <button class="modal-cancel" id="jiraCancel">Ləğv et</button>
+      <button class="modal-save" id="jiraSend">&#128203; Story-lər yarat</button>
+    </div>
+  </div>
+</div>
 <script>
 var fileContent='',diagType='use-case',allItems=[],currentMode='model';
 var fi=document.getElementById('fi'),dz=document.getElementById('dz');
@@ -262,7 +317,72 @@ document.getElementById('fclear').addEventListener('click',clearFile);
 dz.addEventListener('dragover',function(e){e.preventDefault();dz.style.borderColor='var(--accent)';});
 dz.addEventListener('dragleave',function(){dz.style.borderColor='';});
 dz.addEventListener('drop',function(e){e.preventDefault();dz.style.borderColor='';if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);});
-function clearFile(){fileContent='';fi.value='';finfo.classList.remove('show');langDetect.classList.remove('show');genbtn.disabled=true;showState('empty');}
+function clearFile(){fileContent='';fi.value='';finfo.classList.remove('show');langDetect.classList.remove('show');genbtn.disabled=true;// ─── Jira Integration ────────────────────────────────────────────────────
+var JIRA_KEYS = ['jiraDomain','jiraEmail','jiraToken','jiraProject'];
+function loadJiraFields(){
+  JIRA_KEYS.forEach(function(k){
+    var v=localStorage.getItem(k);
+    if(v) document.getElementById(k).value=v;
+  });
+}
+function saveJiraFields(){
+  JIRA_KEYS.forEach(function(k){
+    localStorage.setItem(k, document.getElementById(k).value.trim());
+  });
+}
+
+document.getElementById('jiraBtn').addEventListener('click',function(){
+  loadJiraFields();
+  document.getElementById('jiraResults').style.display='none';
+  document.getElementById('jiraResults').innerHTML='';
+  document.getElementById('jiraModal').classList.add('show');
+});
+document.getElementById('jiraCancel').addEventListener('click',function(){
+  document.getElementById('jiraModal').classList.remove('show');
+});
+document.getElementById('jiraModal').addEventListener('click',function(e){
+  if(e.target===this) this.classList.remove('show');
+});
+
+document.getElementById('jiraSend').addEventListener('click',function(){
+  var domain=document.getElementById('jiraDomain').value.trim();
+  var email=document.getElementById('jiraEmail').value.trim();
+  var token=document.getElementById('jiraToken').value.trim();
+  var proj=document.getElementById('jiraProject').value.trim();
+  if(!domain||!email||!token||!proj){
+    showToast('Bütün sahələri doldurun');return;
+  }
+  saveJiraFields();
+  var btn=document.getElementById('jiraSend');
+  btn.textContent='Göndərilir...';btn.disabled=true;
+  fetch('/api/jira-push',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({items:allItems,jiraDomain:domain,jiraEmail:email,jiraToken:token,projectKey:proj})
+  })
+  .then(function(r){return r.json();})
+  .then(function(d){
+    btn.textContent='&#128203; Story-lər yarat';btn.disabled=false;
+    var el=document.getElementById('jiraResults');
+    el.style.display='flex';el.innerHTML='';
+    if(d.created&&d.created.length){
+      d.created.forEach(function(c){
+        el.innerHTML+='<div class="jira-result-item"><span class="jira-result-key">'+esc(c.issueKey)+'</span><span class="jira-result-lane">'+esc(c.lane)+' ('+c.count+' AC)</span><a class="jira-result-link" href="'+esc(c.url)+'" target="_blank">Aç &#8599;</a></div>';
+      });
+    }
+    if(d.errors&&d.errors.length){
+      d.errors.forEach(function(e){
+        el.innerHTML+='<div class="jira-err-item">&#9888; '+esc(e.lane)+': '+esc(String(e.error))+'</div>';
+      });
+    }
+  })
+  .catch(function(err){
+    btn.textContent='&#128203; Story-lər yarat';btn.disabled=false;
+    showToast('Xeta: '+err.message);
+  });
+});
+
+showState('empty');}
 function readFile(file){
   var r=new FileReader();
   r.onload=function(e){
@@ -325,6 +445,71 @@ function showState(s,msg){
 function itemToText(s){var ac=(s.acceptance_criteria||[]).map(function(a,i){return (i+1)+'. '+a;}).join('\n');return s.title+'\n\n'+ac;}
 function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function showToast(m){var t=document.getElementById('toast');t.textContent=m;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+// ─── Jira Integration ────────────────────────────────────────────────────
+var JIRA_KEYS = ['jiraDomain','jiraEmail','jiraToken','jiraProject'];
+function loadJiraFields(){
+  JIRA_KEYS.forEach(function(k){
+    var v=localStorage.getItem(k);
+    if(v) document.getElementById(k).value=v;
+  });
+}
+function saveJiraFields(){
+  JIRA_KEYS.forEach(function(k){
+    localStorage.setItem(k, document.getElementById(k).value.trim());
+  });
+}
+
+document.getElementById('jiraBtn').addEventListener('click',function(){
+  loadJiraFields();
+  document.getElementById('jiraResults').style.display='none';
+  document.getElementById('jiraResults').innerHTML='';
+  document.getElementById('jiraModal').classList.add('show');
+});
+document.getElementById('jiraCancel').addEventListener('click',function(){
+  document.getElementById('jiraModal').classList.remove('show');
+});
+document.getElementById('jiraModal').addEventListener('click',function(e){
+  if(e.target===this) this.classList.remove('show');
+});
+
+document.getElementById('jiraSend').addEventListener('click',function(){
+  var domain=document.getElementById('jiraDomain').value.trim();
+  var email=document.getElementById('jiraEmail').value.trim();
+  var token=document.getElementById('jiraToken').value.trim();
+  var proj=document.getElementById('jiraProject').value.trim();
+  if(!domain||!email||!token||!proj){
+    showToast('Bütün sahələri doldurun');return;
+  }
+  saveJiraFields();
+  var btn=document.getElementById('jiraSend');
+  btn.textContent='Göndərilir...';btn.disabled=true;
+  fetch('/api/jira-push',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({items:allItems,jiraDomain:domain,jiraEmail:email,jiraToken:token,projectKey:proj})
+  })
+  .then(function(r){return r.json();})
+  .then(function(d){
+    btn.textContent='&#128203; Story-lər yarat';btn.disabled=false;
+    var el=document.getElementById('jiraResults');
+    el.style.display='flex';el.innerHTML='';
+    if(d.created&&d.created.length){
+      d.created.forEach(function(c){
+        el.innerHTML+='<div class="jira-result-item"><span class="jira-result-key">'+esc(c.issueKey)+'</span><span class="jira-result-lane">'+esc(c.lane)+' ('+c.count+' AC)</span><a class="jira-result-link" href="'+esc(c.url)+'" target="_blank">Aç &#8599;</a></div>';
+      });
+    }
+    if(d.errors&&d.errors.length){
+      d.errors.forEach(function(e){
+        el.innerHTML+='<div class="jira-err-item">&#9888; '+esc(e.lane)+': '+esc(String(e.error))+'</div>';
+      });
+    }
+  })
+  .catch(function(err){
+    btn.textContent='&#128203; Story-lər yarat';btn.disabled=false;
+    showToast('Xeta: '+err.message);
+  });
+});
+
 showState('empty');
 </script>
 </body>
