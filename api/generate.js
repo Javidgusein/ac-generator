@@ -74,7 +74,7 @@ Yalnız JSON array çıxar.`;
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-r1:free",
+        model: "meta-llama/llama-3.3-70b-instruct:free",
         messages: [{ role: "user", content: prompt }],
         max_tokens: 8000,
         temperature: 0.1
