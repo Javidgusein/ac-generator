@@ -137,7 +137,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(
       <span class="nav-icon">&#9670;</span>
       <div class="nav-texts"><span class="nav-label">AC Generator</span><span class="nav-sub-text">Diaqramdan AC çıxar</span></div>
     </a>
-    <a href="/test-cases" class="nav-item active" onclick="return false;" style="cursor:default;">
+    <a href="/tc" class="nav-item active" onclick="return false;" style="cursor:default;">
       <div class="nav-active-dot"></div>
       <span class="nav-icon">&#129514;</span>
       <div class="nav-texts"><span class="nav-label">Test Case-lər</span><span class="nav-sub-text">AC-dan test case çıxar</span></div>
@@ -245,7 +245,7 @@ genbtn.addEventListener('click',function(){runGenerate();});
 function runGenerate(){
   var content=inputMode==='text'?document.getElementById('acTextarea').value.trim():inputContent;
   if(!content)return;showState('loading');genbtn.disabled=true;
-  fetch('/api/generate-testcases',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acText:content})})
+  fetch('/api/generate-tc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({acText:content})})
   .then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d};});})
   .then(function(r){
     genbtn.disabled=false;
